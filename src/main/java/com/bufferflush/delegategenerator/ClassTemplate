@@ -1,0 +1,15 @@
+/*
+* Put copyright here
+*/
+package com.benecard.delegate.{packageName};
+
+import com.benecard.delegate.DelegateBase;
+{imports}
+
+/*
+* This is the delegate for the service {serviceName}
+*/
+public final class {className} extends BaseDelegate
+{
+    {methods}
+}

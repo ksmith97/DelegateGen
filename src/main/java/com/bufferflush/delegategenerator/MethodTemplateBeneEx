@@ -1,0 +1,11 @@
+{javadoc}
+public final {returnType} {methodName}({params}) throws BenecardException
+{
+    try
+    {
+        this.callRemoteService( {serviceName}, {methodName}, {paramNames});
+    } catch( Exception e )
+    {
+        throw new BenecardException(e);
+    }
+}

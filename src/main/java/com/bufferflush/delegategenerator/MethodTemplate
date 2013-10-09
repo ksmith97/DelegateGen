@@ -1,0 +1,4 @@
+public final {returnType} {methodName}({params}) throws Exception
+{
+    this.callRemoteService( {serviceName}, {methodName}, {paramNames});
+}
