@@ -1,6 +1,5 @@
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
+/**
+ * 
  */
 package com.bufferflush.delegategenerator;
 
@@ -32,13 +31,14 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 /**
+ * @author ksmith_cntr
  *
- * @author Kevin Smith
  */
-public class DelegateBuilder {
+public class HelperBuilder
+{
     private static final String classTemplate;
     private static final String constantTemplate;
-    private static final Logger logger = LoggerFactory.getLogger(DelegateBuilder.class);
+    private static final Logger logger = LoggerFactory.getLogger( DelegateBuilder.class );
     private static final String methodExTemplate;
     private static final String methodTemplate;
 
@@ -59,16 +59,16 @@ public class DelegateBuilder {
     }
 
     public static void parseFile( final Reader in, final Writer delegateClass, final Writer constants )
-    throws IOException,
-    ParseException
+                                                                                                       throws IOException,
+                                                                                                       ParseException
     {
         final CompilationUnit cu = JavaParser.parse( in );
 
         final DelegateBuilder builder = new DelegateBuilder()
-        .setPackageName( cu.getPackage().getName().getName() )
-        .addImports( cu.getImports() )
-        .addMethods( BuilderUtil.getMethods( cu ) )
-        .setServiceName( BuilderUtil.getClassName( cu ) );
+            .setPackageName( cu.getPackage().getName().getName() )
+            .addImports( cu.getImports() )
+            .addMethods( BuilderUtil.getMethods( cu ) )
+            .setServiceName( BuilderUtil.getClassName( cu ) );
 
         delegateClass.write( builder.generateClassDef() );
         delegateClass.flush();
@@ -77,23 +77,23 @@ public class DelegateBuilder {
     }
 
     private String className = "";
-    private final StringBuilder classStr = new StringBuilder(DelegateBuilder.classTemplate);
+    private final StringBuilder classStr = new StringBuilder( DelegateBuilder.classTemplate );
     private final Set<String> constants = Sets.newHashSet();
     private final Set<ImportDeclaration> imports = Sets.newHashSet();
     private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
-        new BuilderUtil.ParameterComparator() );
+    new BuilderUtil.ParameterComparator() );
     private String packageName = "";
     private String serviceName = "";
 
-    public final DelegateBuilder addImports(final List<ImportDeclaration> imports)
+    public final DelegateBuilder addImports( final List<ImportDeclaration> imports )
     {
-        this.imports.addAll(imports );
+        this.imports.addAll( imports );
         return this;
     }
 
-    public DelegateBuilder addMethod(final MethodDeclaration m)
+    public DelegateBuilder addMethod( final MethodDeclaration m )
     {
-        this.methods.add(m);
+        this.methods.add( m );
         return this;
     }
 
@@ -103,28 +103,28 @@ public class DelegateBuilder {
         return this;
     }
 
-    private final String constantize(final String value)
+    private final String constantize( final String value )
     {
         this.constants.add( value );
         return "ServiceConstants." + this.createConstant( value );
     }
 
-    private final String createConstant(final String str)
+    private final String createConstant( final String str )
     {
         return ( this.serviceName.equals( str ) ? "" : this.serviceName )
-        + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
+               + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
     }
 
     private String generateClassDef()
     {
         return this.classStr.toString()
-        .replace( "<className>", this.className )
-        .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
-        .replace( "<methods>", Joiner.on( "\n" ).join( this.generateMethods() ) )
-        .replace( "<serviceName>", this.serviceName )
-        .replace( "<packageName>", this.packageName )
-        .replace( "<imports>",
-            Joiner.on( "\n" ).join( this.generateRequiredImports( this.imports ) ) );
+            .replace( "<className>", this.className )
+            .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
+            .replace( "<methods>", Joiner.on( "\n" ).join( this.generateMethods() ) )
+            .replace( "<serviceName>", this.serviceName )
+            .replace( "<packageName>", this.packageName )
+            .replace( "<imports>",
+                Joiner.on( "\n" ).join( this.generateRequiredImports( this.imports ) ) );
     }
 
     private String generateConstantDef()
@@ -141,8 +141,8 @@ public class DelegateBuilder {
             final String con = (String) values[x];
 
             constantValues[x] = DelegateBuilder.constantTemplate
-            .replace( "<name>", this.createConstant( con ) )
-            .replace("<value>", con);
+                .replace( "<name>", this.createConstant( con ) )
+                .replace( "<value>", con );
         }
 
         Arrays.sort( constantValues );
@@ -152,23 +152,23 @@ public class DelegateBuilder {
     private final String generateMethod( final MethodDeclaration d )
     {
         return this.getMethodString( d )
-        .replace( "<returnType>", d.getType().toString() )
-        .replace( "<return>", d.getType().toString().equals( "void" ) ? "" : "return" )
-        .replace( "<methodName>", d.getName() )
-        .replace( "<methodNameConst>", this.constantize( d.getName() ) )
-        .replace( "<serviceNameConst>", this.constantize( this.serviceName ) )
-        .replace( "<javadoc>", this.generateMethodComment( d ) )
-        .replace( "<params>", d.getParameters() != null ? Joiner.on( ", " ).join( d.getParameters() ) : "" )
-        .replace( "<paramNames>", this.getParamNames( d.getParameters() ) );
+            .replace( "<returnType>", d.getType().toString() )
+            .replace( "<return>", d.getType().toString().equals( "void" ) ? "" : "return" )
+            .replace( "<methodName>", d.getName() )
+            .replace( "<methodNameConst>", this.constantize( d.getName() ) )
+            .replace( "<serviceNameConst>", this.constantize( this.serviceName ) )
+            .replace( "<javadoc>", this.generateMethodComment( d ) )
+            .replace( "<params>", d.getParameters() != null ? Joiner.on( ", " ).join( d.getParameters() ) : "" )
+            .replace( "<paramNames>", this.getParamNames( d.getParameters() ) );
     }
 
-    private String generateMethodComment(final MethodDeclaration d)
+    private String generateMethodComment( final MethodDeclaration d )
     {
-        if(d.getComment() == null || d.getComment().toString().isEmpty())
+        if ( d.getComment() == null || d.getComment().toString().isEmpty() )
         {
             return "/**\n"
-            + "\t * No comment exists for this service method.\n"
-            + "\t */";
+                   + "\t * No comment exists for this service method.\n"
+                   + "\t */";
         }
 
         return d.getComment().toString().trim();
@@ -177,9 +177,9 @@ public class DelegateBuilder {
     private final List<String> generateMethods()
     {
         final List<String> methods = Lists.newArrayListWithCapacity( this.methods.size() );
-        for(final MethodDeclaration m : this.methods)
+        for( final MethodDeclaration m : this.methods )
         {
-            methods.add( this.generateMethod( m ));
+            methods.add( this.generateMethod( m ) );
         }
         return methods;
     }
@@ -197,19 +197,19 @@ public class DelegateBuilder {
     }
 
     private final String getImportForType( final String type, final Collection<ImportDeclaration> d )
-    throws ParseException
+                                                                                                     throws ParseException
     {
         final String cleanedType = type.replaceAll( "<.*>", "" );
         if ( this.isFullyQualifiedType( cleanedType ) )
         {
             DelegateBuilder.logger
-            .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
-            + cleanedType );
+                .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
+                        + cleanedType );
             return cleanedType;
         }
         else
         {
-            for(final ImportDeclaration dec : d)
+            for( final ImportDeclaration dec : d )
             {
                 if ( dec.getName().getName().equals( cleanedType ) )
                 {
@@ -224,7 +224,7 @@ public class DelegateBuilder {
 
     private final Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
     {
-        if ( (m.getParameters() == null || m.getParameters().size() == 0) && m.getType().toString().equals("void") )
+        if ( ( m.getParameters() == null || m.getParameters().size() == 0 ) && m.getType().toString().equals( "void" ) )
         {
             return Sets.newHashSetWithExpectedSize( 0 );
         }
@@ -233,7 +233,7 @@ public class DelegateBuilder {
 
         if ( m.getParameters() != null && m.getParameters().size() > 0 )
         {
-            for(final Parameter p : m.getParameters())
+            for( final Parameter p : m.getParameters() )
             {
                 try
                 {
@@ -242,7 +242,7 @@ public class DelegateBuilder {
                 catch( final ParseException e )
                 {
                     DelegateBuilder.logger.debug( "Could not find import for type " + p.getType()
-                        + " this may because it is in java.lang.*." );
+                                                  + " this may because it is in java.lang.*." );
                 }
             }
         }
@@ -256,14 +256,14 @@ public class DelegateBuilder {
             catch( final ParseException e )
             {
                 DelegateBuilder.logger.debug( "Could not find import for type " + m.getType()
-                    + " this may because it is in java.lang.*." );
+                                              + " this may because it is in java.lang.*." );
             }
         }
 
         return reqImports;
     }
 
-    private final String getMethodString(final MethodDeclaration d)
+    private final String getMethodString( final MethodDeclaration d )
     {
         if ( d.getThrows() != null )
         {
@@ -276,7 +276,7 @@ public class DelegateBuilder {
                 else if ( !"Exception".equals( exp.getName() ) )
                 {
                     throw new Error( "Unsupported Exception found on service method. Service: "
-                    + this.serviceName + " Method: " + d.getName() + " Exception: " + exp.getName() );
+                                     + this.serviceName + " Method: " + d.getName() + " Exception: " + exp.getName() );
                 }
             }
         }
@@ -306,19 +306,19 @@ public class DelegateBuilder {
         return type.contains( "." );
     }
 
-    public final DelegateBuilder setPackageName(final String packageName)
+    public final DelegateBuilder setPackageName( final String packageName )
     {
-        this.packageName = packageName.startsWith(".") ? packageName.substring(1) : packageName;
+        this.packageName = packageName.startsWith( "." ) ? packageName.substring( 1 ) : packageName;
         return this;
     }
 
-    public final DelegateBuilder setServiceName(final String serviceName)
+    public final DelegateBuilder setServiceName( final String serviceName )
     {
         this.serviceName = serviceName;
 
-        if(!serviceName.endsWith("Service"))
+        if ( !serviceName.endsWith( "Service" ) )
         {
-            DelegateBuilder.logger.warn("Attempting to generate delegate for file not marked as service.");
+            DelegateBuilder.logger.warn( "Attempting to generate delegate for file not marked as service." );
         }
         else
         {

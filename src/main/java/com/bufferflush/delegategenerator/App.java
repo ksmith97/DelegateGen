@@ -1,74 +1,104 @@
 package com.bufferflush.delegategenerator;
 
-import java.io.File;
-import java.util.Collection;
-import com.google.common.collect.Lists;
-import japa.parser.JavaParser;
 import japa.parser.ParseException;
-import japa.parser.ast.CompilationUnit;
-import japa.parser.ast.body.MethodDeclaration;
-import japa.parser.ast.visitor.VoidVisitorAdapter;
+
+import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.io.Reader;
+import java.io.Writer;
+import java.util.Collection;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Lists;
 
 public class App {
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
-    /**
-     * @param args the command line arguments
-     */
-    public static void main(String[] args) {
-        logger.info("Started");
-        for (String s : checkFiles(args)) {
-            parseFile(s);
-        }
-    }
-
-    private static Collection<String> checkFiles(String[] paths) {
-        Collection<String> files = Lists.newArrayList();
-        for (String path : paths) {
+    private static Collection<String> checkFiles(final String[] paths) {
+        final Collection<String> files = Lists.newArrayList();
+        for (final String path : paths) {
             try {
-                File f = new File(path);
+                final File f = new File(path);
                 //TODO Explode directory into files here eventually
                 if (f.isDirectory()) {
                     throw new IllegalArgumentException("Directories currently unsupported.");
                 }
 
                 files.add(path);
-            } catch (Exception e) {
-                logger.error("Failed to add file at path: " + path, e);
+            } catch (final Exception e) {
+                App.logger.error("Failed to add file at path: " + path, e);
             }
         }
 
         return files;
     }
 
-    private static void parseFile(String filePath) {
-        logger.info("Parsing file " + filePath);
-        try (InputStream in = new FileInputStream(filePath)) {
-            CompilationUnit cu = JavaParser.parse(in);
-            
-            List<MethodDeclaration> methods = Lists.newArrayList();
-            new MethodVisitor().visit(cu, methods);
-            
-        } catch (ParseException e) {
-            logger.error("Failed to parse file.", e);
-        } catch (IOException e) {
-            logger.error("Could not open file for parsing.", e);
+    /**
+     * @param args the command line arguments
+     */
+    public static void main(final String[] args) {
+        App.logger.info("Started");
+        for (final String s : App.checkFiles(args)) {
+            App.parseFile(s);
         }
     }
 
-    private static final class MethodVisitor extends VoidVisitorAdapter<List<MethodDeclaration>> {
+    private static void parseFile(final String filePath) {
+        App.logger.info("Parsing file " + filePath);
+        Reader in = null;
+        Writer writer = null;
+        try {
+            in = new InputStreamReader( new FileInputStream( filePath ) );
+            writer = new PrintWriter( System.out );
 
-        @Override
-        public void visit(MethodDeclaration d, List<MethodDeclaration> arg) {
-            arg.add(d);
+            final String delegatePath = filePath.contains( "Service" ) ? filePath.replace( "Service", "Delegate" )
+                                                                       : filePath.replace( ".java", "Delegate.java" );
+            final Writer classWriter = new BufferedWriter( new OutputStreamWriter( new FileOutputStream( new File(
+                delegatePath ) ) ) );
+
+            final Writer constantsWriter = new BufferedWriter( new OutputStreamWriter( new FileOutputStream( new File(
+            "Constants.java" ) ) ) );
+
+
+            DelegateBuilder.parseFile( in, classWriter, constantsWriter );
+        } catch (final ParseException e) {
+            App.logger.error("Failed to parse file.", e);
+        } catch (final IOException e) {
+            App.logger.error("Could not open file for parsing.", e);
+        } finally {
+
+            try
+            {
+                if ( in != null )
+                {
+                    in.close();
+                }
+            }
+            catch( final IOException e )
+            {
+                App.logger.error( "Failed to close Reader.", e );
+            }
+
+            try
+            {
+                if ( writer != null )
+                {
+                    writer.close();
+                }
+            }
+            catch( final IOException e )
+            {
+                App.logger.error( "Failed to close Writer.", e );
+            }
         }
     }
 }

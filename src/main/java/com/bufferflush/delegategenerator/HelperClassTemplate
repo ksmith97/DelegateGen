@@ -1,0 +1,88 @@
+/*
+ * Copyright © 2008, Benecard, All Rights Reserved Unless otherwise indicated,
+ * all source code is the copyright of Benecard and is protected by applicable
+ * US and international copyright laws, all rights reserved. No part of this
+ * material may be used for any purpose without prior written permission. This
+ * material and all source codes may not be reproduced in any form without
+ * permission in writing from Benecard. Use for any purpose without written
+ * permission from Benecard is expressly prohibited by law, and may result in
+ * civil and criminal penalties. All rights reserved. No part of this file may
+ * be reproduced in any form or by any electronic or mechanical means, including
+ * the use of information storage and retrieval systems, without permission in
+ * writing from the copyright owner.
+ */
+package com.benecard.pbm.helper;
+
+import javax.ejb.EJBAccessException;
+import javax.ejb.EJBException;
+
+
+<imports>
+
+/**
+ * This is the ServiceHelper for the <serviceName>
+ *
+ * This class was auto generated.  It should not be modified.
+ * @date <date>
+ */
+public final class <className> extends DelegateBase
+{
+	public static final Logger logger = Logger.getLogger(<className>.class);
+	public final <localClass> localRef;
+	
+	/**
+     * constructor to get the reference for prescriber Service.
+     */
+	public <className>()
+	{
+		postalAddressServiceLocalReference = ServiceLocator.getInstance().getService(
+		<localEjbName>, <className>.class);
+	}
+	
+	/**
+     * Invokes appropriate service method based on the operation parameter and
+     * preparing the parameters passed to the service method.
+     * 
+     * @param operation
+     *            the operation to be performed on the Prescriber Service
+     * @param paramObjects
+     *            parameters passed as an object array
+     * @throws BenecardException
+     *             throws exception
+     * @return returns an Object, typically a {@link ServiceResponse} object.
+     * 
+     */
+    public final Object execute( final String operation,
+                                 final Object[] paramObjects ) throws BenecardException, BenecardSecurityException
+    {
+    	<className>.logger.info("<className> : Start execute method.");
+    	Object responseObject = null;
+    	try
+    	{
+    		<methodCalls>
+    		throw new RuntimeException("Operation " + operation + " is currently unsupported in the <className>");
+    	}
+    	catch( final EJBAccessException ex )
+        {
+            this.logger.error( ex );
+            throw new BenecardSecurityException( MessageHelper.getErrorMessage( "error.system.security",
+                ex.getMessage() ), ex );
+        }
+        catch( final EJBException ex )
+        {
+            this.logger.error( ex );
+            throw new BenecardSystemException( MessageHelper.getErrorMessage( "error.system.security",
+                ex.getMessage() ), ex );
+        }
+        catch( final RuntimeException ex )
+        {
+            this.logger.error( ex );
+
+            throw new BenecardSystemException( MessageHelper.getErrorMessage( "error.system.unknown",
+                ex.getMessage() ), ex );
+        }
+        
+        this.logger.info("<serviceName> : End execute method.");
+        return responseObject;
+    }
+}
