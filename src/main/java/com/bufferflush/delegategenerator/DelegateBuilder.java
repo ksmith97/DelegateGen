@@ -7,13 +7,9 @@ package com.bufferflush.delegategenerator;
 import japa.parser.JavaParser;
 import japa.parser.ParseException;
 import japa.parser.ast.CompilationUnit;
-import japa.parser.ast.ImportDeclaration;
 import japa.parser.ast.body.MethodDeclaration;
 import japa.parser.ast.body.Parameter;
 import japa.parser.ast.expr.NameExpr;
-import japa.parser.ast.type.ClassOrInterfaceType;
-import japa.parser.ast.type.ReferenceType;
-import japa.parser.ast.type.Type;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -68,9 +64,8 @@ public class DelegateBuilder {
     {
         final CompilationUnit cu = JavaParser.parse( in );
 
-        final DelegateBuilder builder = new DelegateBuilder()
+        final DelegateBuilder builder = new DelegateBuilder( cu )
         .setPackageName( cu.getPackage().getName().getName() )
-        .addImports( cu.getImports() )
         .addMethods( BuilderUtil.getMethods( cu ) )
         .setServiceName( BuilderUtil.getClassName( cu ) );
 
@@ -81,17 +76,16 @@ public class DelegateBuilder {
 
     private String className = "";
     private final StringBuilder classStr = new StringBuilder(DelegateBuilder.classTemplate);
+    private final CompilationUnit compUnit;
     private final Set<String> constants = Sets.newHashSet();
-    private final Set<ImportDeclaration> imports = Sets.newHashSet();
     private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
     new BuilderUtil.ParameterComparator() );
     private String packageName = "";
     private String serviceName = "";
 
-    public final DelegateBuilder addImports(final List<ImportDeclaration> imports)
+    public DelegateBuilder( final CompilationUnit cu )
     {
-        this.imports.addAll(imports );
-        return this;
+        this.compUnit = cu;
     }
 
     public DelegateBuilder addMethod(final MethodDeclaration m)
@@ -139,7 +133,7 @@ public class DelegateBuilder {
         .replace( "<serviceName>", this.serviceName )
         .replace( "<packageName>", this.packageName )
         .replace( "<imports>",
-            Joiner.on( "\n" ).join( this.generateRequiredImports( this.imports ) ) );
+            Joiner.on( "\n" ).join( this.generateRequiredImports() ) );
     }
 
     private List<String> generateConstantDef()
@@ -199,101 +193,39 @@ public class DelegateBuilder {
         return genMethods;
     }
 
-    private Set<String> generateRequiredImports( final Collection<ImportDeclaration> d )
+    private Set<String> generateRequiredImports()
     {
         //We use a tree set so we have non duplicated sorted results.
         final Set<String> reqImports = Sets.newTreeSet();
         for( final MethodDeclaration md : this.methods )
         {
-            reqImports.addAll( this.getMethodRequiredImports( md, d ) );
+            reqImports.addAll( this.getMethodRequiredImports( md ) );
         }
 
         return reqImports;
     }
 
-    private String getImportForTypeString( final String typeStr, final Collection<ImportDeclaration> d )
-    {
-        final List<String> imports = Lists.newArrayList();
-        if ( this.isFullyQualifiedType( typeStr ) )
-        {
-            DelegateBuilder.logger
-            .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
-            + typeStr );
-            imports.add( typeStr.trim() );
-        }
-        else
-        {
-            for(final ImportDeclaration dec : d)
-            {
-                if ( dec.getName().getName().equals( typeStr ) )
-                {
-                    return dec.toString().trim();
-                }
-            }
-        }
-
-        DelegateBuilder.logger.warn( "Could not find import for type: " + typeStr );
-        return null;
-    }
-
-    private Set<String> getImportsForType( final Type type, final Collection<ImportDeclaration> d )
-    throws ParseException
-    {
-        if ( ! ( type instanceof ReferenceType ) )
-        {
-            return Sets.newHashSetWithExpectedSize( 0 );
-        }
-
-        final Set<String> imports = Sets.newHashSet();
-
-        for( final String typeStr : this.resolveTypes( type ) )
-        {
-            final String importStr = this.getImportForTypeString( typeStr, d );
-            if ( importStr != null )
-            {
-                imports.add( importStr );
-            }
-        }
-
-        return imports;
-    }
-
-    private Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
+    private Set<String> getMethodRequiredImports( final MethodDeclaration m )
     {
         if ( (m.getParameters() == null || m.getParameters().isEmpty()) && m.getType().toString().equals("void") )
         {
             return Sets.newHashSetWithExpectedSize( 0 );
         }
 
-        final Set<String> reqImports = Sets.newHashSet();
+        final ImportResolver resolver = new ImportResolver( this.compUnit.getImports() );
 
+        final Set<String> reqImports = Sets.newHashSet();
         if ( m.getParameters() != null && m.getParameters().size() > 0 )
         {
             for(final Parameter p : m.getParameters())
             {
-                try
-                {
-                    reqImports.addAll( this.getImportsForType( p.getType(), d ) );
-                }
-                catch( final ParseException e )
-                {
-                    DelegateBuilder.logger.debug( "Could not find import for type " + p.getType()
-                        + " this may because it is in java.lang.*." );
-                }
+                reqImports.addAll( resolver.resolve( p.getType() ) );
             }
         }
 
         if ( !m.getType().toString().equals( "void" ) )
         {
-            try
-            {
-                reqImports.addAll( this.getImportsForType( m.getType(), d ) );
-            }
-            catch( final ParseException e )
-            {
-                DelegateBuilder.logger.debug( "Could not find import for type " + m.getType()
-                    + " this may because it is in java.lang.*." );
-            }
+            reqImports.addAll( resolver.resolve( m.getType() ) );
         }
 
         return reqImports;
@@ -336,37 +268,7 @@ public class DelegateBuilder {
         return ", " + Joiner.on( ", " ).join( names );
     }
 
-    //This is a temporary thing this definitely does not work properly for any case that is qualifying on an existing type like Map.Entry.
-    private boolean isFullyQualifiedType( final String type )
-    {
-        return type.contains( "." );
-    }
 
-    private List<String> resolveTypes(final Type type)
-    {
-        final List<String> types = Lists.newArrayList();
-        if ( type instanceof ReferenceType )
-        {
-            final ReferenceType refType = (ReferenceType) type;
-
-            if ( refType.getType() instanceof ClassOrInterfaceType )
-            {
-                final ClassOrInterfaceType coit = (ClassOrInterfaceType) refType.getType();
-
-                types.add( coit.getName() );
-
-                if ( coit.getTypeArgs() != null )
-                {
-                    for( final Type t : coit.getTypeArgs() )
-                    {
-                        types.addAll( this.resolveTypes( t ) );
-                    }
-                }
-            }
-        }
-
-        return types;
-    }
 
     public final DelegateBuilder setPackageName(final String packageName)
     {
