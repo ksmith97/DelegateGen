@@ -211,55 +211,48 @@ public class DelegateBuilder {
         return reqImports;
     }
 
-    private List<String> getImportsForType( final Type type, final Collection<ImportDeclaration> d )
-    throws ParseException
+    private String getImportForTypeString( final String typeStr, final Collection<ImportDeclaration> d )
     {
-        final List<String> types = Lists.newArrayList();
-        if ( type instanceof ReferenceType )
-        {
-            final ReferenceType refType = (ReferenceType) type;
-            if ( refType.getType() instanceof ClassOrInterfaceType )
-            {
-                final ClassOrInterfaceType coit = (ClassOrInterfaceType) refType.getType();
-                if ( coit.getTypeArgs() != null )
-                {
-                    for( final Type t : coit.getTypeArgs() )
-                    {
-                        types.add( t.toString() );
-                    }
-                }
-            }
-        }
-        else
-        {
-            return types;
-        }
-
-        types.add( type.toString() );
-
         final List<String> imports = Lists.newArrayList();
-        if ( this.isFullyQualifiedType( type.toString() ) )
+        if ( this.isFullyQualifiedType( typeStr ) )
         {
             DelegateBuilder.logger
             .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
-            + type );
-            imports.add( type.toString().trim() );
+            + typeStr );
+            imports.add( typeStr.trim() );
         }
         else
         {
             for(final ImportDeclaration dec : d)
             {
-                if ( dec.getName().getName().equals( type ) )
+                if ( dec.getName().getName().equals( typeStr ) )
                 {
-                    imports.add( dec.toString().trim() );
+                    return dec.toString().trim();
                 }
             }
         }
 
-        if ( imports.size() == 0 )
+        DelegateBuilder.logger.warn( "Could not find import for type: " + typeStr );
+        return null;
+    }
+
+    private Set<String> getImportsForType( final Type type, final Collection<ImportDeclaration> d )
+    throws ParseException
+    {
+        if ( ! ( type instanceof ReferenceType ) )
         {
-            DelegateBuilder.logger.error( "Could not find import for type: " + type );
-            throw new ParseException( "Could not find import for type " + type + " in the given imports." );
+            return Sets.newHashSetWithExpectedSize( 0 );
+        }
+
+        final Set<String> imports = Sets.newHashSet();
+
+        for( final String typeStr : this.resolveTypes( type ) )
+        {
+            final String importStr = this.getImportForTypeString( typeStr, d );
+            if ( importStr != null )
+            {
+                imports.add( importStr );
+            }
         }
 
         return imports;
@@ -347,6 +340,32 @@ public class DelegateBuilder {
     private boolean isFullyQualifiedType( final String type )
     {
         return type.contains( "." );
+    }
+
+    private List<String> resolveTypes(final Type type)
+    {
+        final List<String> types = Lists.newArrayList();
+        if ( type instanceof ReferenceType )
+        {
+            final ReferenceType refType = (ReferenceType) type;
+
+            if ( refType.getType() instanceof ClassOrInterfaceType )
+            {
+                final ClassOrInterfaceType coit = (ClassOrInterfaceType) refType.getType();
+
+                types.add( coit.getName() );
+
+                if ( coit.getTypeArgs() != null )
+                {
+                    for( final Type t : coit.getTypeArgs() )
+                    {
+                        types.addAll( this.resolveTypes( t ) );
+                    }
+                }
+            }
+        }
+
+        return types;
     }
 
     public final DelegateBuilder setPackageName(final String packageName)
