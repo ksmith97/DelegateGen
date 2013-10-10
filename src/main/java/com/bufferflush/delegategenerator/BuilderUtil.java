@@ -44,9 +44,9 @@ public class BuilderUtil
 
     public static String getClassName(final CompilationUnit cu)
     {
-        final String arg = "";
+        final List<String> arg = Lists.newArrayList();
         new ClassNameRetriever().visit( cu, arg );
-        return arg;
+        return arg.get( 0 );
     }
 
     public static List<MethodDeclaration> getMethods( final CompilationUnit cu )
@@ -58,7 +58,17 @@ public class BuilderUtil
 
     public static String loadResourceAsString( final String resourceName ) throws IOException
     {
-        final InputStream in = DelegateBuilder.class.getResourceAsStream( resourceName );
+        InputStream in = BuilderUtil.class.getResourceAsStream( resourceName );
+        //Hack! The resource name must start with a / to load when jar'd but must not start with a slash when loaded while testing.
+        if ( in == null && resourceName.startsWith( "/" ) )
+        {
+            in = BuilderUtil.class.getResourceAsStream( resourceName.substring( 1 ) );
+        }
+
+        if ( in == null )
+        {
+            throw new RuntimeException( "Could not find resource " + resourceName );
+        }
         final BufferedReader reader = new BufferedReader( new InputStreamReader( in ) );
         try
         {

@@ -7,9 +7,9 @@ import japa.parser.JavaParser;
 import japa.parser.ParseException;
 import japa.parser.ast.CompilationUnit;
 import japa.parser.ast.ImportDeclaration;
+import japa.parser.ast.PackageDeclaration;
 import japa.parser.ast.body.MethodDeclaration;
 import japa.parser.ast.body.Parameter;
-import japa.parser.ast.expr.NameExpr;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -19,15 +19,19 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
 /**
@@ -36,10 +40,10 @@ import com.google.common.collect.Sets;
  */
 public class HelperBuilder
 {
+    private static final String callTemplate;
     private static final String classTemplate;
     private static final String constantTemplate;
     private static final Logger logger = LoggerFactory.getLogger( HelperBuilder.class );
-    private static final String callTemplate;
 
     static
     {
@@ -56,30 +60,31 @@ public class HelperBuilder
         }
     }
 
-    public static void parseFile( final Reader in, final Writer delegateClass, final Writer constants )
-                                                                                                       throws IOException,
-                                                                                                       ParseException
+    public static void parseFile( final Reader in, final Writer delegateClass, final Set<String> constants )
+    throws IOException,
+    ParseException
     {
         final CompilationUnit cu = JavaParser.parse( in );
 
         final HelperBuilder builder = new HelperBuilder()
-            .addImports( cu.getImports() )
-            .addMethods( BuilderUtil.getMethods( cu ) )
-            .setServiceName( BuilderUtil.getClassName( cu ) );
+        .addImports( cu.getImports() )
+        .addMethods( BuilderUtil.getMethods( cu ) )
+        .setServiceName( BuilderUtil.getClassName( cu ) )
+        .setPackage( cu.getPackage() );
 
         delegateClass.write( builder.generateClassDef() );
         delegateClass.flush();
-        constants.write( builder.generateConstantDef() );
-        constants.flush();
+        constants.addAll( builder.generateConstantDef() );
     }
 
     private String className = "";
     private final StringBuilder classStr = new StringBuilder( HelperBuilder.classTemplate );
-    private final Set<String> constants = Sets.newHashSet();
+    private final Map<String, String> constants = Maps.newHashMap();
     private final Set<ImportDeclaration> imports = Sets.newHashSet();
+    private String localServiceName = "";
     private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
     new BuilderUtil.ParameterComparator() );
-    private String packageName = "";
+    private PackageDeclaration packageDec;
     private String serviceName = "";
 
     public final HelperBuilder addImports( final List<ImportDeclaration> imports )
@@ -88,13 +93,13 @@ public class HelperBuilder
         return this;
     }
 
-    public HelperBuilder addMethod( final MethodDeclaration m )
+    public final HelperBuilder addMethod( final MethodDeclaration m )
     {
         this.methods.add( m );
         return this;
     }
 
-    public HelperBuilder addMethods( final Collection<MethodDeclaration> m )
+    public final HelperBuilder addMethods( final Collection<MethodDeclaration> m )
     {
         this.methods.addAll( m );
         return this;
@@ -102,86 +107,105 @@ public class HelperBuilder
 
     private String constantize( final String value )
     {
-        this.constants.add( value );
+        this.constants.put( value, value );
         return "ServiceConstants." + this.createConstant( value );
     }
 
-    private final String createConstant( final String str )
+    private String constantize( final String value, final String key )
+    {
+        final String existingValue = this.constants.get( key );
+        if ( existingValue == null )
+        {
+            this.constants.put( key, value );
+        }
+        else if ( !existingValue.equals( key ) )
+        {
+            throw new RuntimeException( "Attempted to create a new constant with an existing name. Name: " + key
+                + " existing value: " + existingValue + " NewValue:" + value );
+        }
+        //We don't care if they are inserting the same value as a pre existing value.
+
+        return "ServiceConstants." + this.createConstant( key );
+    }
+
+    private String createConstant( final String str )
     {
         return ( this.serviceName.equals( str ) ? "" : this.serviceName )
-               + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
+        + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
     }
 
     private String generateClassDef()
     {
+        if ( StringUtils.isBlank( this.className ) )
+        {
+            HelperBuilder.logger.error( "The class name is blank." );
+        }
+        if ( StringUtils.isBlank( this.serviceName ) )
+        {
+            HelperBuilder.logger.error( "The service name is blank." );
+        }
+        if ( StringUtils.isBlank( this.localServiceName ) )
+        {
+            HelperBuilder.logger.error( "The local service name is blank." );
+        }
         return this.classStr.toString()
-            .replace( "<className>", this.className )
-            .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
-            .replace( "<methods>", Joiner.on( "\n" ).join( this.generateMethods() ) )
-            .replace( "<serviceName>", this.serviceName )
-            .replace( "<packageName>", this.packageName )
-            .replace( "<imports>",
-                Joiner.on( "\n" ).join( this.generateRequiredImports( this.imports ) ) );
+        .replace( "<className>", this.className )
+        .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
+        .replace( "<methodCalls>", Joiner.on( "" ).join( this.generateMethodCalls() ) )
+        .replace( "<serviceName>", this.serviceName )
+        .replace( "<localClass>", this.localServiceName )
+        .replace( "<localEjbName>", this.constantize( "ejblocal:" + this.packageDec.getName() + "."
+        + this.localServiceName, "localEjbLookup" ) )
+        .replace( "<imports>", Joiner.on( "\n" ).join( this.generateRequiredImports( this.imports ) ) );
     }
 
-    private String generateConstantDef()
+    private List<String> generateConstantDef()
     {
-        return Joiner.on( "" ).join( this.generateConstants( this.constants ) );
+        return Arrays.asList( this.generateConstants( this.constants ) );
     }
 
-    private final String[] generateConstants( final Collection<String> coll )
+    private String[] generateConstants( final Map<String, String> constants )
     {
-        final Object[] values = coll.toArray();
+        final Object[] values = constants.entrySet().toArray();
         final String[] constantValues = new String[values.length];
         for( int x = 0; x < values.length; x++ )
         {
-            final String con = (String) values[x];
+            @SuppressWarnings( "unchecked" )
+            final Map.Entry<String, String> con = (Entry<String, String>) values[x];
 
             constantValues[x] = HelperBuilder.constantTemplate
-                .replace( "<name>", this.createConstant( con ) )
-                .replace( "<value>", con );
+            .replace( "<name>", this.createConstant( con.getKey() ) )
+            .replace( "<value>", con.getValue() );
         }
 
         Arrays.sort( constantValues );
         return constantValues;
     }
 
-    private final String generateMethod( final MethodDeclaration d )
+    private String generateMethod( final MethodDeclaration d )
     {
-        return this.getMethodString( d )
-            .replace( "<returnType>", d.getType().toString() )
-            .replace( "<return>", d.getType().toString().equals( "void" ) ? "" : "return" )
-            .replace( "<methodName>", d.getName() )
-            .replace( "<methodNameConst>", this.constantize( d.getName() ) )
-            .replace( "<serviceNameConst>", this.constantize( this.serviceName ) )
-            .replace( "<javadoc>", this.generateMethodComment( d ) )
-            .replace( "<params>", d.getParameters() != null ? Joiner.on( ", " ).join( d.getParameters() ) : "" )
-            .replace( "<paramNames>", this.getParamNames( d.getParameters() ) );
+        return HelperBuilder.callTemplate
+        .replace( "<method>", d.getName() )
+        .replace( "<methodConst>", this.constantize( d.getName() ) )
+        .replace( "<params>", this.getCastedParamNames( d.getParameters() ) );
     }
 
-    private String generateMethodComment( final MethodDeclaration d )
-    {
-        if ( d.getComment() == null || d.getComment().toString().isEmpty() )
-        {
-            return "/**\n"
-                   + "\t * No comment exists for this service method.\n"
-                   + "\t */";
-        }
-
-        return d.getComment().toString().trim();
-    }
-
-    private final List<String> generateMethods()
+    private List<String> generateMethodCalls()
     {
         final List<String> methods = Lists.newArrayListWithCapacity( this.methods.size() );
         for( final MethodDeclaration m : this.methods )
         {
-            methods.add( this.generateMethod( m ) );
+            String methodCall = this.generateMethod( m );
+            if ( methods.size() > 0 )
+            {
+                methodCall = methodCall.replace( "if", "else if" );
+            }
+            methods.add( methodCall );
         }
         return methods;
     }
 
-    private final Set<String> generateRequiredImports( final Collection<ImportDeclaration> d )
+    private Set<String> generateRequiredImports( final Collection<ImportDeclaration> d )
     {
         //We use a tree set so we have non duplicated sorted results.
         final Set<String> imports = Sets.newTreeSet();
@@ -190,18 +214,36 @@ public class HelperBuilder
             imports.addAll( this.getMethodRequiredImports( md, d ) );
         }
 
+        imports.add( "import " + this.packageDec.getName().toString() + "." + this.localServiceName + ";" );
+
         return imports;
     }
 
-    private final String getImportForType( final String type, final Collection<ImportDeclaration> d )
-                                                                                                     throws ParseException
+    private String getCastedParamNames( final List<Parameter> list )
+    {
+        if ( list == null || list.size() == 0 )
+        {
+            return "";
+        }
+
+        final String[] names = new String[list.size()];
+        for( int x = 0; x < list.size(); x++ )
+        {
+            names[x] = "(" + list.get( x ).getType() + ") paramObjects[" + x + "]";
+        }
+
+        return " " + Joiner.on( ", " ).join( names ) + " ";
+    }
+
+    private String getImportForType( final String type, final Collection<ImportDeclaration> d )
+    throws ParseException
     {
         final String cleanedType = type.replaceAll( "<.*>", "" );
         if ( this.isFullyQualifiedType( cleanedType ) )
         {
             HelperBuilder.logger
-                .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
-                        + cleanedType );
+            .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
+            + cleanedType );
             return cleanedType;
         }
         else
@@ -219,88 +261,41 @@ public class HelperBuilder
         throw new ParseException( "Could not find import for type " + cleanedType + " in the given imports." );
     }
 
-    private final Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
+    private Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
     {
-        if ( ( m.getParameters() == null || m.getParameters().size() == 0 ) && m.getType().toString().equals( "void" ) )
+        if ( m.getParameters() == null || m.getParameters().isEmpty() )
         {
             return Sets.newHashSetWithExpectedSize( 0 );
         }
 
         final Set<String> reqImports = Sets.newHashSet();
 
-        if ( m.getParameters() != null && m.getParameters().size() > 0 )
-        {
-            for( final Parameter p : m.getParameters() )
-            {
-                try
-                {
-                    reqImports.add( this.getImportForType( p.getType().toString(), d ) );
-                }
-                catch( final ParseException e )
-                {
-                    HelperBuilder.logger.debug( "Could not find import for type " + p.getType()
-                                                  + " this may because it is in java.lang.*." );
-                }
-            }
-        }
-
-        if ( !m.getType().toString().equals( "void" ) )
+        for( final Parameter p : m.getParameters() )
         {
             try
             {
-                reqImports.add( this.getImportForType( m.getType().toString(), d ) );
+                reqImports.add( this.getImportForType( p.getType().toString(), d ) );
             }
             catch( final ParseException e )
             {
-                HelperBuilder.logger.debug( "Could not find import for type " + m.getType()
-                                              + " this may because it is in java.lang.*." );
+                HelperBuilder.logger.debug( "Could not find import for type " + p.getType()
+                    + " this may because it is in java.lang.*." );
             }
         }
 
         return reqImports;
     }
 
-    private final String getMethodString( final MethodDeclaration d )
-    {
-        if ( d.getThrows() != null )
-        {
-            for( final NameExpr exp : d.getThrows() )
-            {
-                if ( "BenecardException".equals( exp.getName() ) )
-                {
-                    return HelperBuilder.methodExTemplate;
-                }
-                else if ( !"Exception".equals( exp.getName() ) )
-                {
-                    throw new Error( "Unsupported Exception found on service method. Service: "
-                                     + this.serviceName + " Method: " + d.getName() + " Exception: " + exp.getName() );
-                }
-            }
-        }
-
-        return HelperBuilder.methodTemplate;
-    }
-
-    private String getParamNames( final List<Parameter> list )
-    {
-        if ( list == null || list.size() == 0 )
-        {
-            return "";
-        }
-
-        final String[] names = new String[list.size()];
-        for( int x = 0; x < list.size(); x++ )
-        {
-            names[x] = list.get( x ).getId().getName();
-        }
-
-        return ", " + Joiner.on( ", " ).join( names );
-    }
-
     //This is a temporary thing this definitely does not work properly for any case that is qualifying on an existing type like Map.Entry.
     private boolean isFullyQualifiedType( final String type )
     {
         return type.contains( "." );
+    }
+
+    public HelperBuilder setPackage( final PackageDeclaration d )
+    {
+        this.packageDec = d;
+        return this;
     }
 
     public final HelperBuilder setServiceName( final String serviceName )
@@ -313,14 +308,15 @@ public class HelperBuilder
         }
         else
         {
-            this.className = serviceName.replaceAll( "Service$", "" ) + "Delegate";
+            this.className = serviceName.replaceAll( "Service$", "" ) + "ServiceHelper";
+            this.localServiceName = "I" + serviceName + "Local";
         }
 
         return this;
     }
 
     @Override
-    public String toString()
+    public final String toString()
     {
         return "Class:\n" + this.generateClassDef() + "\nConstants:\n" + this.generateConstantDef();
     }

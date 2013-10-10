@@ -5,14 +5,14 @@ import japa.parser.ParseException;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.util.Collection;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,51 +54,75 @@ public class App {
 
     private static void parseFile(final String filePath) {
         App.logger.info("Parsing file " + filePath);
+        final File f = new File( filePath );
         Reader in = null;
-        Writer writer = null;
         try {
-            in = new InputStreamReader( new FileInputStream( filePath ) );
-            writer = new PrintWriter( System.out );
+            //TODO read this into a resettable buffer so it doesn't need to be reread every time its used.
+            in = new InputStreamReader( new FileInputStream( f ) );
+            try
+            {
+                final Set<String> constants = new TreeSet<String>();
 
-            final String delegatePath = filePath.contains( "Service" ) ? filePath.replace( "Service", "Delegate" )
-                                                                       : filePath.replace( ".java", "Delegate.java" );
-            final Writer classWriter = new BufferedWriter( new OutputStreamWriter( new FileOutputStream( new File(
-                delegatePath ) ) ) );
+                App.logger.info( "Generating Delegate." );
+                final String delegatePath = filePath.contains( "Service" ) ? filePath.replace( "Service", "Delegate" )
+                                                                           : filePath.replace( ".java", "Delegate.java" );
+                final Writer delegateWriter = new BufferedWriter( new FileWriter( new File( delegatePath ) ) );
+                try
+                {
 
-            final Writer constantsWriter = new BufferedWriter( new OutputStreamWriter( new FileOutputStream( new File(
-            "Constants.java" ) ) ) );
+                    DelegateBuilder.parseFile( in, delegateWriter, constants );
+                }
+                finally
+                {
+                    delegateWriter.close();
+                }
 
+                //Close the input stream.
+                in.close();
 
-            DelegateBuilder.parseFile( in, classWriter, constantsWriter );
+                App.logger.info( "Delegate Generated." );
+                App.logger.info( "Generating Service Helper." );
+
+                in = new InputStreamReader( new FileInputStream( f ) );
+
+                final String helperPath = filePath.contains( "Service" ) ? filePath.replace( "Service", "ServiceHelper" )
+                                                                         : filePath.replace( ".java", "ServiceHelper.java" );
+                final Writer helperWriter = new BufferedWriter( new FileWriter( new File( helperPath ) ) );
+                try
+                {
+
+                    HelperBuilder.parseFile( in, helperWriter, constants );
+                    App.logger.info( "Service Helper Generated." );
+                }
+                finally
+                {
+                    helperWriter.close();
+                }
+
+                final Writer constantsWriter = new BufferedWriter( new FileWriter( new File( f.getParent()
+                    + File.separator
+                    + "Constants.java" ) ) );
+
+                try
+                {
+                    for( final String c : constants )
+                    {
+                        constantsWriter.write( c );
+                    }
+                }
+                finally
+                {
+                    constantsWriter.close();
+                }
+            }
+            finally
+            {
+                in.close();
+            }
         } catch (final ParseException e) {
             App.logger.error("Failed to parse file.", e);
         } catch (final IOException e) {
             App.logger.error("Could not open file for parsing.", e);
-        } finally {
-
-            try
-            {
-                if ( in != null )
-                {
-                    in.close();
-                }
-            }
-            catch( final IOException e )
-            {
-                App.logger.error( "Failed to close Reader.", e );
-            }
-
-            try
-            {
-                if ( writer != null )
-                {
-                    writer.close();
-                }
-            }
-            catch( final IOException e )
-            {
-                App.logger.error( "Failed to close Writer.", e );
-            }
         }
     }
 }

@@ -11,6 +11,9 @@ import japa.parser.ast.ImportDeclaration;
 import japa.parser.ast.body.MethodDeclaration;
 import japa.parser.ast.body.Parameter;
 import japa.parser.ast.expr.NameExpr;
+import japa.parser.ast.type.ClassOrInterfaceType;
+import japa.parser.ast.type.ReferenceType;
+import japa.parser.ast.type.Type;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -24,6 +27,7 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +62,7 @@ public class DelegateBuilder {
         }
     }
 
-    public static void parseFile( final Reader in, final Writer delegateClass, final Writer constants )
+    public static void parseFile( final Reader in, final Writer delegateClass, final Set<String> constants )
     throws IOException,
     ParseException
     {
@@ -72,8 +76,7 @@ public class DelegateBuilder {
 
         delegateClass.write( builder.generateClassDef() );
         delegateClass.flush();
-        constants.write( builder.generateConstantDef() );
-        constants.flush();
+        constants.addAll( builder.generateConstantDef() );
     }
 
     private String className = "";
@@ -81,7 +84,7 @@ public class DelegateBuilder {
     private final Set<String> constants = Sets.newHashSet();
     private final Set<ImportDeclaration> imports = Sets.newHashSet();
     private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
-        new BuilderUtil.ParameterComparator() );
+    new BuilderUtil.ParameterComparator() );
     private String packageName = "";
     private String serviceName = "";
 
@@ -117,6 +120,18 @@ public class DelegateBuilder {
 
     private String generateClassDef()
     {
+        if ( StringUtils.isBlank( this.className ) )
+        {
+            DelegateBuilder.logger.error( "The class name is blank." );
+        }
+        if ( StringUtils.isBlank( this.serviceName ) )
+        {
+            DelegateBuilder.logger.error( "The service name is blank." );
+        }
+        if ( StringUtils.isBlank( this.packageName ) )
+        {
+            DelegateBuilder.logger.error( "The package name is blank." );
+        }
         return this.classStr.toString()
         .replace( "<className>", this.className )
         .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
@@ -127,9 +142,9 @@ public class DelegateBuilder {
             Joiner.on( "\n" ).join( this.generateRequiredImports( this.imports ) ) );
     }
 
-    private String generateConstantDef()
+    private List<String> generateConstantDef()
     {
-        return Joiner.on( "" ).join( this.generateConstants( this.constants ) );
+        return Arrays.asList( this.generateConstants( this.constants ) );
     }
 
     private String[] generateConstants( final Collection<String> coll )
@@ -196,30 +211,58 @@ public class DelegateBuilder {
         return reqImports;
     }
 
-    private String getImportForType( final String type, final Collection<ImportDeclaration> d )
+    private List<String> getImportsForType( final Type type, final Collection<ImportDeclaration> d )
     throws ParseException
     {
-        final String cleanedType = type.replaceAll( "<.*>", "" );
-        if ( this.isFullyQualifiedType( cleanedType ) )
+        final List<String> types = Lists.newArrayList();
+        if ( type instanceof ReferenceType )
+        {
+            final ReferenceType refType = (ReferenceType) type;
+            if ( refType.getType() instanceof ClassOrInterfaceType )
+            {
+                final ClassOrInterfaceType coit = (ClassOrInterfaceType) refType.getType();
+                if ( coit.getTypeArgs() != null )
+                {
+                    for( final Type t : coit.getTypeArgs() )
+                    {
+                        types.add( t.toString() );
+                    }
+                }
+            }
+        }
+        else
+        {
+            return types;
+        }
+
+        types.add( type.toString() );
+
+        final List<String> imports = Lists.newArrayList();
+        if ( this.isFullyQualifiedType( type.toString() ) )
         {
             DelegateBuilder.logger
             .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
-            + cleanedType );
-            return cleanedType;
+            + type );
+            imports.add( type.toString().trim() );
         }
         else
         {
             for(final ImportDeclaration dec : d)
             {
-                if ( dec.getName().getName().equals( cleanedType ) )
+                if ( dec.getName().getName().equals( type ) )
                 {
-                    return dec.toString().trim();
+                    imports.add( dec.toString().trim() );
                 }
             }
         }
 
-        DelegateBuilder.logger.error( "Could not find import for type: " + cleanedType );
-        throw new ParseException( "Could not find import for type " + cleanedType + " in the given imports." );
+        if ( imports.size() == 0 )
+        {
+            DelegateBuilder.logger.error( "Could not find import for type: " + type );
+            throw new ParseException( "Could not find import for type " + type + " in the given imports." );
+        }
+
+        return imports;
     }
 
     private Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
@@ -237,7 +280,7 @@ public class DelegateBuilder {
             {
                 try
                 {
-                    reqImports.add( this.getImportForType( p.getType().toString(), d ) );
+                    reqImports.addAll( this.getImportsForType( p.getType(), d ) );
                 }
                 catch( final ParseException e )
                 {
@@ -251,7 +294,7 @@ public class DelegateBuilder {
         {
             try
             {
-                reqImports.add( this.getImportForType( m.getType().toString(), d ) );
+                reqImports.addAll( this.getImportsForType( m.getType(), d ) );
             }
             catch( final ParseException e )
             {
