@@ -1,0 +1,4 @@
+        if(<methodConst>.equals(operationType))
+        {
+            this.localRef.<method>( <params> );
+        }

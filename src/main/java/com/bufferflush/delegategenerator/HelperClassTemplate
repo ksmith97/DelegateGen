@@ -27,19 +27,19 @@ import javax.ejb.EJBException;
  */
 public final class <className> extends DelegateBase
 {
-	public static final Logger logger = Logger.getLogger(<className>.class);
-	public final <localClass> localRef;
+    public static final Logger logger = Logger.getLogger(<className>.class);
+    public final <localClass> localRef;
 	
-	/**
+    /**
      * constructor to get the reference for prescriber Service.
      */
-	public <className>()
-	{
-		postalAddressServiceLocalReference = ServiceLocator.getInstance().getService(
-		<localEjbName>, <className>.class);
-	}
+    public <className>()
+    {
+            postalAddressServiceLocalReference = ServiceLocator.getInstance().getService(
+            <localEjbName>, <className>.class);
+    }
 	
-	/**
+    /**
      * Invokes appropriate service method based on the operation parameter and
      * preparing the parameters passed to the service method.
      * 

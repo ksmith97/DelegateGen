@@ -53,7 +53,7 @@ public class DelegateBuilder {
         }
         catch( final IOException e )
         {
-            DelegateBuilder.logger.error( "Faild to load Templates!", e );
+            DelegateBuilder.logger.error( "Failed to load Templates!", e );
             throw new Error( "Failed to load templates.", e );
         }
     }
@@ -103,13 +103,13 @@ public class DelegateBuilder {
         return this;
     }
 
-    private final String constantize(final String value)
+    private String constantize(final String value)
     {
         this.constants.add( value );
         return "ServiceConstants." + this.createConstant( value );
     }
 
-    private final String createConstant(final String str)
+    private String createConstant(final String str)
     {
         return ( this.serviceName.equals( str ) ? "" : this.serviceName )
         + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
@@ -132,7 +132,7 @@ public class DelegateBuilder {
         return Joiner.on( "" ).join( this.generateConstants( this.constants ) );
     }
 
-    private final String[] generateConstants( final Collection<String> coll )
+    private String[] generateConstants( final Collection<String> coll )
     {
         final Object[] values = coll.toArray();
         final String[] constantValues = new String[values.length];
@@ -149,7 +149,7 @@ public class DelegateBuilder {
         return constantValues;
     }
 
-    private final String generateMethod( final MethodDeclaration d )
+    private String generateMethod( final MethodDeclaration d )
     {
         return this.getMethodString( d )
         .replace( "<returnType>", d.getType().toString() )
@@ -174,29 +174,29 @@ public class DelegateBuilder {
         return d.getComment().toString().trim();
     }
 
-    private final List<String> generateMethods()
+    private List<String> generateMethods()
     {
-        final List<String> methods = Lists.newArrayListWithCapacity( this.methods.size() );
+        final List<String> genMethods = Lists.newArrayListWithCapacity( this.methods.size() );
         for(final MethodDeclaration m : this.methods)
         {
-            methods.add( this.generateMethod( m ));
+            genMethods.add( this.generateMethod( m ));
         }
-        return methods;
+        return genMethods;
     }
 
-    private final Set<String> generateRequiredImports( final Collection<ImportDeclaration> d )
+    private Set<String> generateRequiredImports( final Collection<ImportDeclaration> d )
     {
         //We use a tree set so we have non duplicated sorted results.
-        final Set<String> imports = Sets.newTreeSet();
+        final Set<String> reqImports = Sets.newTreeSet();
         for( final MethodDeclaration md : this.methods )
         {
-            imports.addAll( this.getMethodRequiredImports( md, d ) );
+            reqImports.addAll( this.getMethodRequiredImports( md, d ) );
         }
 
-        return imports;
+        return reqImports;
     }
 
-    private final String getImportForType( final String type, final Collection<ImportDeclaration> d )
+    private String getImportForType( final String type, final Collection<ImportDeclaration> d )
     throws ParseException
     {
         final String cleanedType = type.replaceAll( "<.*>", "" );
@@ -222,9 +222,9 @@ public class DelegateBuilder {
         throw new ParseException( "Could not find import for type " + cleanedType + " in the given imports." );
     }
 
-    private final Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
+    private Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
     {
-        if ( (m.getParameters() == null || m.getParameters().size() == 0) && m.getType().toString().equals("void") )
+        if ( (m.getParameters() == null || m.getParameters().isEmpty()) && m.getType().toString().equals("void") )
         {
             return Sets.newHashSetWithExpectedSize( 0 );
         }
@@ -263,7 +263,7 @@ public class DelegateBuilder {
         return reqImports;
     }
 
-    private final String getMethodString(final MethodDeclaration d)
+    private String getMethodString(final MethodDeclaration d)
     {
         if ( d.getThrows() != null )
         {
@@ -286,7 +286,7 @@ public class DelegateBuilder {
 
     private String getParamNames( final List<Parameter> list )
     {
-        if ( list == null || list.size() == 0 )
+        if ( list == null || list.isEmpty() )
         {
             return "";
         }

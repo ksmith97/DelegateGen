@@ -38,22 +38,20 @@ public class HelperBuilder
 {
     private static final String classTemplate;
     private static final String constantTemplate;
-    private static final Logger logger = LoggerFactory.getLogger( DelegateBuilder.class );
-    private static final String methodExTemplate;
-    private static final String methodTemplate;
+    private static final Logger logger = LoggerFactory.getLogger( HelperBuilder.class );
+    private static final String callTemplate;
 
     static
     {
         try
         {
-            classTemplate = BuilderUtil.loadResourceAsString( "/DelegateClassTemplate" );
-            methodTemplate = BuilderUtil.loadResourceAsString( "/MethodTemplate" );
-            methodExTemplate = BuilderUtil.loadResourceAsString( "/MethodTemplateBeneEx" );
+            classTemplate = BuilderUtil.loadResourceAsString( "/HelperClassTemplate" );
+            callTemplate = BuilderUtil.loadResourceAsString( "/CallTemplate" );
             constantTemplate = BuilderUtil.loadResourceAsString( "/ConstantTemplate" );
         }
         catch( final IOException e )
         {
-            DelegateBuilder.logger.error( "Faild to load Templates!", e );
+            HelperBuilder.logger.error( "Faild to load Templates!", e );
             throw new Error( "Failed to load templates.", e );
         }
     }
@@ -64,8 +62,7 @@ public class HelperBuilder
     {
         final CompilationUnit cu = JavaParser.parse( in );
 
-        final DelegateBuilder builder = new DelegateBuilder()
-            .setPackageName( cu.getPackage().getName().getName() )
+        final HelperBuilder builder = new HelperBuilder()
             .addImports( cu.getImports() )
             .addMethods( BuilderUtil.getMethods( cu ) )
             .setServiceName( BuilderUtil.getClassName( cu ) );
@@ -77,7 +74,7 @@ public class HelperBuilder
     }
 
     private String className = "";
-    private final StringBuilder classStr = new StringBuilder( DelegateBuilder.classTemplate );
+    private final StringBuilder classStr = new StringBuilder( HelperBuilder.classTemplate );
     private final Set<String> constants = Sets.newHashSet();
     private final Set<ImportDeclaration> imports = Sets.newHashSet();
     private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
@@ -85,25 +82,25 @@ public class HelperBuilder
     private String packageName = "";
     private String serviceName = "";
 
-    public final DelegateBuilder addImports( final List<ImportDeclaration> imports )
+    public final HelperBuilder addImports( final List<ImportDeclaration> imports )
     {
         this.imports.addAll( imports );
         return this;
     }
 
-    public DelegateBuilder addMethod( final MethodDeclaration m )
+    public HelperBuilder addMethod( final MethodDeclaration m )
     {
         this.methods.add( m );
         return this;
     }
 
-    public DelegateBuilder addMethods( final Collection<MethodDeclaration> m )
+    public HelperBuilder addMethods( final Collection<MethodDeclaration> m )
     {
         this.methods.addAll( m );
         return this;
     }
 
-    private final String constantize( final String value )
+    private String constantize( final String value )
     {
         this.constants.add( value );
         return "ServiceConstants." + this.createConstant( value );
@@ -140,7 +137,7 @@ public class HelperBuilder
         {
             final String con = (String) values[x];
 
-            constantValues[x] = DelegateBuilder.constantTemplate
+            constantValues[x] = HelperBuilder.constantTemplate
                 .replace( "<name>", this.createConstant( con ) )
                 .replace( "<value>", con );
         }
@@ -202,7 +199,7 @@ public class HelperBuilder
         final String cleanedType = type.replaceAll( "<.*>", "" );
         if ( this.isFullyQualifiedType( cleanedType ) )
         {
-            DelegateBuilder.logger
+            HelperBuilder.logger
                 .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
                         + cleanedType );
             return cleanedType;
@@ -218,7 +215,7 @@ public class HelperBuilder
             }
         }
 
-        DelegateBuilder.logger.error( "Could not find import for type: " + cleanedType );
+        HelperBuilder.logger.error( "Could not find import for type: " + cleanedType );
         throw new ParseException( "Could not find import for type " + cleanedType + " in the given imports." );
     }
 
@@ -241,7 +238,7 @@ public class HelperBuilder
                 }
                 catch( final ParseException e )
                 {
-                    DelegateBuilder.logger.debug( "Could not find import for type " + p.getType()
+                    HelperBuilder.logger.debug( "Could not find import for type " + p.getType()
                                                   + " this may because it is in java.lang.*." );
                 }
             }
@@ -255,7 +252,7 @@ public class HelperBuilder
             }
             catch( final ParseException e )
             {
-                DelegateBuilder.logger.debug( "Could not find import for type " + m.getType()
+                HelperBuilder.logger.debug( "Could not find import for type " + m.getType()
                                               + " this may because it is in java.lang.*." );
             }
         }
@@ -271,7 +268,7 @@ public class HelperBuilder
             {
                 if ( "BenecardException".equals( exp.getName() ) )
                 {
-                    return DelegateBuilder.methodExTemplate;
+                    return HelperBuilder.methodExTemplate;
                 }
                 else if ( !"Exception".equals( exp.getName() ) )
                 {
@@ -281,7 +278,7 @@ public class HelperBuilder
             }
         }
 
-        return DelegateBuilder.methodTemplate;
+        return HelperBuilder.methodTemplate;
     }
 
     private String getParamNames( final List<Parameter> list )
@@ -306,19 +303,13 @@ public class HelperBuilder
         return type.contains( "." );
     }
 
-    public final DelegateBuilder setPackageName( final String packageName )
-    {
-        this.packageName = packageName.startsWith( "." ) ? packageName.substring( 1 ) : packageName;
-        return this;
-    }
-
-    public final DelegateBuilder setServiceName( final String serviceName )
+    public final HelperBuilder setServiceName( final String serviceName )
     {
         this.serviceName = serviceName;
 
         if ( !serviceName.endsWith( "Service" ) )
         {
-            DelegateBuilder.logger.warn( "Attempting to generate delegate for file not marked as service." );
+            HelperBuilder.logger.warn( "Attempting to generate delegate for file not marked as service." );
         }
         else
         {
