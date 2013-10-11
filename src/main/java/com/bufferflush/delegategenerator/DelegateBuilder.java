@@ -65,7 +65,6 @@ public class DelegateBuilder {
         final CompilationUnit cu = JavaParser.parse( in );
 
         final DelegateBuilder builder = new DelegateBuilder( cu )
-        .setPackageName( cu.getPackage().getName().getName() )
         .addMethods( BuilderUtil.getMethods( cu ) )
         .setServiceName( BuilderUtil.getClassName( cu ) );
 
@@ -80,7 +79,6 @@ public class DelegateBuilder {
     private final Set<String> constants = Sets.newHashSet();
     private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
     new BuilderUtil.ParameterComparator() );
-    private String packageName = "";
     private String serviceName = "";
 
     public DelegateBuilder( final CompilationUnit cu )
@@ -122,18 +120,16 @@ public class DelegateBuilder {
         {
             DelegateBuilder.logger.error( "The service name is blank." );
         }
-        if ( StringUtils.isBlank( this.packageName ) )
-        {
-            DelegateBuilder.logger.error( "The package name is blank." );
-        }
         return this.classStr.toString()
         .replace( "<className>", this.className )
         .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
         .replace( "<methods>", Joiner.on( "\n" ).join( this.generateMethods() ) )
         .replace( "<serviceName>", this.serviceName )
-        .replace( "<packageName>", this.packageName )
+            .replace( "<packageName>", this.compUnit.getPackage().getName().getName().toString() )
         .replace( "<imports>",
-            Joiner.on( "\n" ).join( this.generateRequiredImports() ) );
+            Joiner.on( "\n" ).join(
+                ImportResolver.resolveImports( this.compUnit.getImports(),
+                    BuilderUtil.getMethodTypes( this.methods ) ) ) );
     }
 
     private List<String> generateConstantDef()
@@ -183,52 +179,14 @@ public class DelegateBuilder {
         return d.getComment().toString().trim();
     }
 
-    private List<String> generateMethods()
+    private Collection<String> generateMethods()
     {
-        final List<String> genMethods = Lists.newArrayListWithCapacity( this.methods.size() );
+        final Collection<String> genMethods = Lists.newArrayListWithCapacity( this.methods.size() );
         for(final MethodDeclaration m : this.methods)
         {
             genMethods.add( this.generateMethod( m ));
         }
         return genMethods;
-    }
-
-    private Set<String> generateRequiredImports()
-    {
-        //We use a tree set so we have non duplicated sorted results.
-        final Set<String> reqImports = Sets.newTreeSet();
-        for( final MethodDeclaration md : this.methods )
-        {
-            reqImports.addAll( this.getMethodRequiredImports( md ) );
-        }
-
-        return reqImports;
-    }
-
-    private Set<String> getMethodRequiredImports( final MethodDeclaration m )
-    {
-        if ( (m.getParameters() == null || m.getParameters().isEmpty()) && m.getType().toString().equals("void") )
-        {
-            return Sets.newHashSetWithExpectedSize( 0 );
-        }
-
-        final ImportResolver resolver = new ImportResolver( this.compUnit.getImports() );
-
-        final Set<String> reqImports = Sets.newHashSet();
-        if ( m.getParameters() != null && m.getParameters().size() > 0 )
-        {
-            for(final Parameter p : m.getParameters())
-            {
-                reqImports.addAll( resolver.resolve( p.getType() ) );
-            }
-        }
-
-        if ( !m.getType().toString().equals( "void" ) )
-        {
-            reqImports.addAll( resolver.resolve( m.getType() ) );
-        }
-
-        return reqImports;
     }
 
     private String getMethodString(final MethodDeclaration d)
@@ -266,14 +224,6 @@ public class DelegateBuilder {
         }
 
         return ", " + Joiner.on( ", " ).join( names );
-    }
-
-
-
-    public final DelegateBuilder setPackageName(final String packageName)
-    {
-        this.packageName = packageName.startsWith(".") ? packageName.substring(1) : packageName;
-        return this;
     }
 
     public final DelegateBuilder setServiceName(final String serviceName)

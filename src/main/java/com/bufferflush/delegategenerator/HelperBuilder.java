@@ -7,7 +7,6 @@ import japa.parser.JavaParser;
 import japa.parser.ParseException;
 import japa.parser.ast.CompilationUnit;
 import japa.parser.ast.ImportDeclaration;
-import japa.parser.ast.PackageDeclaration;
 import japa.parser.ast.body.MethodDeclaration;
 import japa.parser.ast.body.Parameter;
 
@@ -66,11 +65,9 @@ public class HelperBuilder
     {
         final CompilationUnit cu = JavaParser.parse( in );
 
-        final HelperBuilder builder = new HelperBuilder()
-        .addImports( cu.getImports() )
+        final HelperBuilder builder = new HelperBuilder( cu )
         .addMethods( BuilderUtil.getMethods( cu ) )
-        .setServiceName( BuilderUtil.getClassName( cu ) )
-        .setPackage( cu.getPackage() );
+            .setServiceName( BuilderUtil.getClassName( cu ) );
 
         delegateClass.write( builder.generateClassDef() );
         delegateClass.flush();
@@ -78,19 +75,18 @@ public class HelperBuilder
     }
 
     private String className = "";
+
     private final StringBuilder classStr = new StringBuilder( HelperBuilder.classTemplate );
+    private final CompilationUnit compUnit;
     private final Map<String, String> constants = Maps.newHashMap();
-    private final Set<ImportDeclaration> imports = Sets.newHashSet();
     private String localServiceName = "";
     private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
     new BuilderUtil.ParameterComparator() );
-    private PackageDeclaration packageDec;
     private String serviceName = "";
 
-    public final HelperBuilder addImports( final List<ImportDeclaration> imports )
+    public HelperBuilder(final CompilationUnit cu)
     {
-        this.imports.addAll( imports );
-        return this;
+        this.compUnit = cu;
     }
 
     public final HelperBuilder addMethod( final MethodDeclaration m )
@@ -154,9 +150,9 @@ public class HelperBuilder
         .replace( "<methodCalls>", Joiner.on( "" ).join( this.generateMethodCalls() ) )
         .replace( "<serviceName>", this.serviceName )
         .replace( "<localClass>", this.localServiceName )
-        .replace( "<localEjbName>", this.constantize( "ejblocal:" + this.packageDec.getName() + "."
+        .replace( "<localEjbName>", this.constantize( "ejblocal:" + this.compUnit.getPackage().getName() + "."
         + this.localServiceName, "localEjbLookup" ) )
-        .replace( "<imports>", Joiner.on( "\n" ).join( this.generateRequiredImports( this.imports ) ) );
+        .replace( "<imports>", Joiner.on( "\n" ).join( this.generateRequiredImports( this.compUnit.getImports() ) ) );
     }
 
     private List<String> generateConstantDef()
@@ -207,14 +203,11 @@ public class HelperBuilder
 
     private Set<String> generateRequiredImports( final Collection<ImportDeclaration> d )
     {
-        //We use a tree set so we have non duplicated sorted results.
-        final Set<String> imports = Sets.newTreeSet();
-        for( final MethodDeclaration md : this.methods )
-        {
-            imports.addAll( this.getMethodRequiredImports( md, d ) );
-        }
+        final Set<String> imports = Sets.newHashSet();
+        imports.addAll( ImportResolver.resolveImports( this.compUnit.getImports(),
+            BuilderUtil.getMethodTypes( this.methods ) ) );
 
-        imports.add( "import " + this.packageDec.getName().toString() + "." + this.localServiceName + ";" );
+        imports.add( "import " + this.compUnit.getPackage().getName() + "." + this.localServiceName + ";" );
 
         return imports;
     }
@@ -233,69 +226,6 @@ public class HelperBuilder
         }
 
         return " " + Joiner.on( ", " ).join( names ) + " ";
-    }
-
-    private String getImportForType( final String type, final Collection<ImportDeclaration> d )
-    throws ParseException
-    {
-        final String cleanedType = type.replaceAll( "<.*>", "" );
-        if ( this.isFullyQualifiedType( cleanedType ) )
-        {
-            HelperBuilder.logger
-            .debug( "Qualified type detected. Assuming it is fully qualified even if it is not. type: "
-            + cleanedType );
-            return cleanedType;
-        }
-        else
-        {
-            for( final ImportDeclaration dec : d )
-            {
-                if ( dec.getName().getName().equals( cleanedType ) )
-                {
-                    return dec.toString().trim();
-                }
-            }
-        }
-
-        HelperBuilder.logger.error( "Could not find import for type: " + cleanedType );
-        throw new ParseException( "Could not find import for type " + cleanedType + " in the given imports." );
-    }
-
-    private Set<String> getMethodRequiredImports( final MethodDeclaration m, final Collection<ImportDeclaration> d )
-    {
-        if ( m.getParameters() == null || m.getParameters().isEmpty() )
-        {
-            return Sets.newHashSetWithExpectedSize( 0 );
-        }
-
-        final Set<String> reqImports = Sets.newHashSet();
-
-        for( final Parameter p : m.getParameters() )
-        {
-            try
-            {
-                reqImports.add( this.getImportForType( p.getType().toString(), d ) );
-            }
-            catch( final ParseException e )
-            {
-                HelperBuilder.logger.debug( "Could not find import for type " + p.getType()
-                    + " this may because it is in java.lang.*." );
-            }
-        }
-
-        return reqImports;
-    }
-
-    //This is a temporary thing this definitely does not work properly for any case that is qualifying on an existing type like Map.Entry.
-    private boolean isFullyQualifiedType( final String type )
-    {
-        return type.contains( "." );
-    }
-
-    public HelperBuilder setPackage( final PackageDeclaration d )
-    {
-        this.packageDec = d;
-        return this;
     }
 
     public final HelperBuilder setServiceName( final String serviceName )

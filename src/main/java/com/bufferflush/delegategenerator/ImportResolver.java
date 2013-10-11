@@ -9,7 +9,6 @@ import japa.parser.ast.type.ClassOrInterfaceType;
 import japa.parser.ast.type.ReferenceType;
 import japa.parser.ast.type.Type;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,19 +27,25 @@ import com.google.common.collect.Sets;
 public class ImportResolver
 {
     private static final Logger logger = LoggerFactory.getLogger( ImportResolver.class );
-    private final Map<Type, Collection<String>> cache;
-    private final Collection<ImportDeclaration> imports;
 
-    public ImportResolver( final Collection<ImportDeclaration> d )
+    public static Set<String> resolveImports( final Iterable<ImportDeclaration> imports, final Iterable<Type> types )
     {
-        this.imports = d;
+        return new ImportResolver( imports ).resolve( types );
+    }
+
+    private final Map<Type, Set<String>> cache;
+    private final Set<ImportDeclaration> imports;
+
+    public ImportResolver( final Iterable<ImportDeclaration> d )
+    {
+        this.imports = Sets.newHashSet( d );
         this.cache = Maps.newHashMap();
     }
 
     private String getImportForType( final ClassOrInterfaceType classType )
     throws ParseException
     {
-        final String typeStr = classType.toString().trim();
+        final String typeStr = classType.getName().trim();
         if ( this.isFullyQualifiedType( typeStr ) )
         {
             return classType.toString().trim();
@@ -59,6 +64,7 @@ public class ImportResolver
         throw new ParseException( "Could not find import for type: " + typeStr );
     }
 
+
     private Set<String> getImportsForType( final ReferenceType type )
     {
         final Set<String> imports = Sets.newHashSet();
@@ -71,14 +77,13 @@ public class ImportResolver
             }
             catch( final ParseException e )
             {
-                ImportResolver.logger.warn( "Failed to retrieve import for type this may because it is in java.lang.",
-                    e );
+                ImportResolver.logger.warn( "Failed to retrieve import for type " + classType
+                    + " this may because it is in java.lang." );
             }
         }
 
         return imports;
     }
-
 
     /**
      * Predicate to determine if a type is fully qualified.
@@ -92,7 +97,18 @@ public class ImportResolver
         return type.contains( "." );
     }
 
-    public final Collection<String> resolve( final Type t )
+    public final Set<String> resolve( final Iterable<Type> t )
+    {
+        final Set<String> types = Sets.newHashSet();
+        for( final Type type : t )
+        {
+            types.addAll( this.resolve( type ) );
+        }
+
+        return types;
+    }
+
+    public final Set<String> resolve( final Type t )
     {
         if ( ! ( t instanceof ReferenceType ) )
         {
@@ -115,12 +131,12 @@ public class ImportResolver
      * @param type
      * @return
      */
-    private List<ClassOrInterfaceType> resolveTypes( final ReferenceType type )
+    private List<ClassOrInterfaceType> resolveTypes( final Type type )
     {
         final List<ClassOrInterfaceType> types = Lists.newArrayList();
         if ( type instanceof ReferenceType )
         {
-            final ReferenceType refType = type;
+            final ReferenceType refType = (ReferenceType) type;
 
             if ( refType.getType() instanceof ClassOrInterfaceType )
             {

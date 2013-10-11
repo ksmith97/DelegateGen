@@ -5,17 +5,23 @@ package com.bufferflush.delegategenerator;
 
 import japa.parser.ast.CompilationUnit;
 import japa.parser.ast.body.MethodDeclaration;
+import japa.parser.ast.body.Parameter;
+import japa.parser.ast.type.Type;
+import japa.parser.ast.type.VoidType;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 import com.bufferflush.delegategenerator.visitor.ClassNameRetriever;
 import com.bufferflush.delegategenerator.visitor.MethodAggregator;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 
 /**
  * @author ksmith_cntr
@@ -42,6 +48,12 @@ public class BuilderUtil
         }
     };
 
+    /**
+     * Gets the Class Name for the compilation unit.
+     * 
+     * @param cu
+     * @return
+     */
     public static String getClassName(final CompilationUnit cu)
     {
         final List<String> arg = Lists.newArrayList();
@@ -49,6 +61,12 @@ public class BuilderUtil
         return arg.get( 0 );
     }
 
+    /**
+     * Gets all the methods for a Compilation Unit.
+     * 
+     * @param cu
+     * @return
+     */
     public static List<MethodDeclaration> getMethods( final CompilationUnit cu )
     {
         final List<MethodDeclaration> methods = Lists.newArrayList();
@@ -56,6 +74,57 @@ public class BuilderUtil
         return methods;
     }
 
+    /**
+     * Retrieves all the types that are a part of the method declarations.
+     * This allows us to generate a set of needed imports.
+     * 
+     * @param d
+     * @return
+     */
+    public static Collection<Type> getMethodTypes( final Iterable<MethodDeclaration> methods )
+    {
+        final Set<Type> types = Sets.newHashSet();
+        for(final MethodDeclaration method : methods)
+        {
+            types.addAll( BuilderUtil.getMethodTypes(method) );
+        }
+        return types;
+    }
+
+    /**
+     * Retrieves all the types that are a part of the method declaration.
+     * This allows us to generate a set of needed imports.
+     * 
+     * @param d
+     * @return
+     */
+    public static Collection<Type> getMethodTypes( final MethodDeclaration d )
+    {
+        final Collection<Type> types = Sets.newHashSet();
+        if ( d.getParameters() != null && !d.getParameters().isEmpty() )
+        {
+            for( final Parameter p : d.getParameters() )
+            {
+                types.add( p.getType() );
+            }
+        }
+
+        if ( ! ( d.getType() instanceof VoidType ) )
+        {
+            types.add( d.getType() );
+        }
+
+        return types;
+    }
+
+    /**
+     * Used to load a resource as a String.
+     * Handles the problem where, when jar'd, resources are loaded from a different place.
+     * 
+     * @param resourceName
+     * @return
+     * @throws IOException
+     */
     public static String loadResourceAsString( final String resourceName ) throws IOException
     {
         InputStream in = BuilderUtil.class.getResourceAsStream( resourceName );
