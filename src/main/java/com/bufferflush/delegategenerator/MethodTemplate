@@ -1,5 +1,0 @@
-	<javadoc>
-	public final <returnType> <methodName>( <params> ) throws Exception
-	{
-	    <return> this.callRemoteService( <serviceNameConst>, <methodNameConst><paramNames>);
-	}

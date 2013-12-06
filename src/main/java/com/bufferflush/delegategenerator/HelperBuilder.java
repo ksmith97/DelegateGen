@@ -6,9 +6,9 @@ package com.bufferflush.delegategenerator;
 import japa.parser.JavaParser;
 import japa.parser.ParseException;
 import japa.parser.ast.CompilationUnit;
-import japa.parser.ast.ImportDeclaration;
 import japa.parser.ast.body.MethodDeclaration;
 import japa.parser.ast.body.Parameter;
+import japa.parser.ast.type.ClassOrInterfaceType;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -21,17 +21,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.SortedSet;
 import java.util.TreeSet;
 
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.benecard.pbm.codegen.CodeGenUtil;
+import com.benecard.pbm.codegen.ImportResolver;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 
 /**
  * @author ksmith_cntr
@@ -48,9 +47,9 @@ public class HelperBuilder
     {
         try
         {
-            classTemplate = BuilderUtil.loadResourceAsString( "/HelperClassTemplate" );
-            callTemplate = BuilderUtil.loadResourceAsString( "/CallTemplate" );
-            constantTemplate = BuilderUtil.loadResourceAsString( "/ConstantTemplate" );
+            classTemplate = CodeGenUtil.loadResourceAsString( "/HelperClassTemplate" );
+            callTemplate = CodeGenUtil.loadResourceAsString( "/CallTemplate" );
+            constantTemplate = CodeGenUtil.loadResourceAsString( "/ConstantTemplate" );
         }
         catch( final IOException e )
         {
@@ -59,108 +58,101 @@ public class HelperBuilder
         }
     }
 
+    private static String generateClassName( final String serviceName )
+    {
+        return (serviceName.endsWith( "Service" ) ? serviceName.replaceAll( "Service$", "" ) : serviceName) + "ServiceHelper";
+    }
+
+    private static String generateEjbLookup( final String packageName, final String serviceName )
+    {
+        return "ejblocal:" + packageName + "." + serviceName;
+    }
+
+    private static String generateLocalClassName( final String serviceName )
+    {
+        return "I" + serviceName + "Local";
+    }
+
     public static void parseFile( final Reader in, final Writer delegateClass, final Set<String> constants )
     throws IOException,
     ParseException
     {
         final CompilationUnit cu = JavaParser.parse( in );
 
-        final HelperBuilder builder = new HelperBuilder( cu )
-        .addMethods( BuilderUtil.getMethods( cu ) )
-            .setServiceName( BuilderUtil.getClassName( cu ) );
+        final HelperBuilder builder = new HelperBuilder( cu );
 
         delegateClass.write( builder.generateClassDef() );
         delegateClass.flush();
         constants.addAll( builder.generateConstantDef() );
     }
 
-    private String className = "";
-
-    private final StringBuilder classStr = new StringBuilder( HelperBuilder.classTemplate );
     private final CompilationUnit compUnit;
+
     private final Map<String, String> constants = Maps.newHashMap();
-    private String localServiceName = "";
-    private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
-    new BuilderUtil.ParameterComparator() );
-    private String serviceName = "";
 
     public HelperBuilder(final CompilationUnit cu)
     {
         this.compUnit = cu;
     }
 
-    public final HelperBuilder addMethod( final MethodDeclaration m )
+    private String constantize( final String value, final String scope )
     {
-        this.methods.add( m );
-        return this;
+        return this.constantize( value, value, scope );
     }
 
-    public final HelperBuilder addMethods( final Collection<MethodDeclaration> m )
-    {
-        this.methods.addAll( m );
-        return this;
-    }
-
-    private String constantize( final String value )
-    {
-        this.constants.put( value, value );
-        return "ServiceConstants." + this.createConstant( value );
-    }
-
-    private String constantize( final String value, final String key )
+    private String constantize( final String value, final String key, final String scope )
     {
         final String existingValue = this.constants.get( key );
         if ( existingValue == null )
         {
             this.constants.put( key, value );
         }
-        else if ( !existingValue.equals( key ) )
+        else if ( !existingValue.equals( value ) )
         {
             throw new RuntimeException( "Attempted to create a new constant with an existing name. Name: " + key
                 + " existing value: " + existingValue + " NewValue:" + value );
         }
         //We don't care if they are inserting the same value as a pre existing value.
 
-        return "ServiceConstants." + this.createConstant( key );
+        return "ServiceConstants." + this.createConstant( key, scope );
     }
 
-    private String createConstant( final String str )
+    private String createConstant( final String str, final String scope )
     {
-        return ( this.serviceName.equals( str ) ? "" : this.serviceName )
-        + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
+        return scope + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
     }
 
-    private String generateClassDef()
+    public String generateClassDef()
     {
-        if ( StringUtils.isBlank( this.className ) )
-        {
-            HelperBuilder.logger.error( "The class name is blank." );
-        }
-        if ( StringUtils.isBlank( this.serviceName ) )
-        {
-            HelperBuilder.logger.error( "The service name is blank." );
-        }
-        if ( StringUtils.isBlank( this.localServiceName ) )
-        {
-            HelperBuilder.logger.error( "The local service name is blank." );
-        }
-        return this.classStr.toString()
-        .replace( "<className>", this.className )
+        final String serviceName = CodeGenUtil.getClassName( this.compUnit );
+        final String className = HelperBuilder.generateClassName(serviceName);
+        final String localServiceName = HelperBuilder.generateLocalClassName( serviceName );
+        final String ejbLookup = HelperBuilder.generateEjbLookup( this.compUnit.getPackage().getName().toString(),
+            serviceName );
+        final Collection<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
+        new CodeGenUtil.ParameterComparator() );
+        methods.addAll( CodeGenUtil.getMethods( this.compUnit ) );
+
+        final ImportResolver resolver = new ImportResolver(this.compUnit.getImports());
+        final Collection<String> imports = resolver.resolve( CodeGenUtil.getMethodTypes( methods ) );
+        imports.addAll( resolver.resolve( new ClassOrInterfaceType( localServiceName ) ) );
+
+        return HelperBuilder.classTemplate
+        .replace( "<className>", className )
         .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
-        .replace( "<methodCalls>", Joiner.on( "" ).join( this.generateMethodCalls() ) )
-        .replace( "<serviceName>", this.serviceName )
-        .replace( "<localClass>", this.localServiceName )
-        .replace( "<localEjbName>", this.constantize( "ejblocal:" + this.compUnit.getPackage().getName() + "."
-        + this.localServiceName, "localEjbLookup" ) )
-        .replace( "<imports>", Joiner.on( "\n" ).join( this.generateRequiredImports( this.compUnit.getImports() ) ) );
+        .replace( "<methodCalls>", Joiner.on( "" ).join( this.generateMethodCalls( methods, serviceName ) ) )
+        .replace( "<serviceName>", serviceName )
+        .replace( "<localClass>", localServiceName )
+        .replace( "<localEjbName>", this.constantize( ejbLookup, "localEjbLookup", serviceName ) )
+        .replace( "<imports>", Joiner.on( "\n" ).join( imports ) );
     }
 
-    private List<String> generateConstantDef()
+    public List<String> generateConstantDef()
     {
-        return Arrays.asList( this.generateConstants( this.constants ) );
+        return Arrays.asList( this.generateConstants( this.constants, CodeGenUtil.getClassName( this.compUnit ) ) );
     }
 
-    private String[] generateConstants( final Map<String, String> constants )
+    private String[] generateConstants( final Map<String, String> constants, final String serviceName )
     {
         final Object[] values = constants.entrySet().toArray();
         final String[] constantValues = new String[values.length];
@@ -170,7 +162,7 @@ public class HelperBuilder
             final Map.Entry<String, String> con = (Entry<String, String>) values[x];
 
             constantValues[x] = HelperBuilder.constantTemplate
-            .replace( "<name>", this.createConstant( con.getKey() ) )
+            .replace( "<name>", this.createConstant( con.getKey(), serviceName ) )
             .replace( "<value>", con.getValue() );
         }
 
@@ -178,38 +170,27 @@ public class HelperBuilder
         return constantValues;
     }
 
-    private String generateMethod( final MethodDeclaration d )
+    private String generateMethod( final MethodDeclaration d, final String serviceName )
     {
         return HelperBuilder.callTemplate
         .replace( "<method>", d.getName() )
-        .replace( "<methodConst>", this.constantize( d.getName() ) )
+        .replace( "<methodConst>", this.constantize( d.getName(), serviceName ) )
         .replace( "<params>", this.getCastedParamNames( d.getParameters() ) );
     }
 
-    private List<String> generateMethodCalls()
+    private List<String> generateMethodCalls( final Collection<MethodDeclaration> methods, final String serviceName )
     {
-        final List<String> methods = Lists.newArrayListWithCapacity( this.methods.size() );
-        for( final MethodDeclaration m : this.methods )
+        final List<String> methodStrs = Lists.newArrayListWithCapacity( methods.size() );
+        for( final MethodDeclaration m : methods )
         {
-            String methodCall = this.generateMethod( m );
-            if ( methods.size() > 0 )
+            String methodCall = this.generateMethod( m, serviceName );
+            if ( methodStrs.size() > 0 )
             {
                 methodCall = methodCall.replace( "if", "else if" );
             }
-            methods.add( methodCall );
+            methodStrs.add( methodCall );
         }
-        return methods;
-    }
-
-    private Set<String> generateRequiredImports( final Collection<ImportDeclaration> d )
-    {
-        final Set<String> imports = Sets.newHashSet();
-        imports.addAll( ImportResolver.resolveImports( this.compUnit.getImports(),
-            BuilderUtil.getMethodTypes( this.methods ) ) );
-
-        imports.add( "import " + this.compUnit.getPackage().getName() + "." + this.localServiceName + ";" );
-
-        return imports;
+        return methodStrs;
     }
 
     private String getCastedParamNames( final List<Parameter> list )
@@ -226,23 +207,6 @@ public class HelperBuilder
         }
 
         return " " + Joiner.on( ", " ).join( names ) + " ";
-    }
-
-    public final HelperBuilder setServiceName( final String serviceName )
-    {
-        this.serviceName = serviceName;
-
-        if ( !serviceName.endsWith( "Service" ) )
-        {
-            HelperBuilder.logger.warn( "Attempting to generate delegate for file not marked as service." );
-        }
-        else
-        {
-            this.className = serviceName.replaceAll( "Service$", "" ) + "ServiceHelper";
-            this.localServiceName = "I" + serviceName + "Local";
-        }
-
-        return this;
     }
 
     @Override

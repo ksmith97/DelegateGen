@@ -1,4 +1,4 @@
-        if(<methodConst>.equals(operationType))
-        {
-            responseObject = this.localRef.<method>( <params> );
-        }
+	        if(<methodConst>.equals(operation))
+	        {
+	            responseObject = this.localRef.<method>( <params> );
+	        }

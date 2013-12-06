@@ -11,7 +11,7 @@
  * the use of information storage and retrieval systems, without permission in
  * writing from the copyright owner.
  */
-package com.benecard.pbm.helper;
+package com.benecard.service.delegate;
 
 import com.benecard.service.delegate.DelegateBase;
 import com.benecard.commons.ServiceConstants;

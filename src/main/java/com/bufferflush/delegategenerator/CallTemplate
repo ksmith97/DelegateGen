@@ -1,4 +1,0 @@
-	        if(<methodConst>.equals(operation))
-	        {
-	            return this.localRef.<method>(<params>);
-	        }

@@ -10,6 +10,7 @@ import japa.parser.ast.CompilationUnit;
 import japa.parser.ast.body.MethodDeclaration;
 import japa.parser.ast.body.Parameter;
 import japa.parser.ast.expr.NameExpr;
+import japa.parser.ast.type.VoidType;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -19,26 +20,29 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
-import java.util.SortedSet;
 import java.util.TreeSet;
 
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.benecard.pbm.codegen.CodeGenUtil;
+import com.benecard.pbm.codegen.ImportResolver;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import com.google.common.collect.Maps;
 
 /**
- *
+ * 
  * @author Kevin Smith
  */
-public class DelegateBuilder {
+public class DelegateBuilder
+{
     private static final String classTemplate;
     private static final String constantTemplate;
-    private static final Logger logger = LoggerFactory.getLogger(DelegateBuilder.class);
+    private static final Logger logger = LoggerFactory.getLogger( DelegateBuilder.class );
     private static final String methodExTemplate;
     private static final String methodTemplate;
 
@@ -46,10 +50,10 @@ public class DelegateBuilder {
     {
         try
         {
-            classTemplate = BuilderUtil.loadResourceAsString( "/DelegateClassTemplate" );
-            methodTemplate = BuilderUtil.loadResourceAsString( "/MethodTemplate" );
-            methodExTemplate = BuilderUtil.loadResourceAsString( "/MethodTemplateBeneEx" );
-            constantTemplate = BuilderUtil.loadResourceAsString( "/ConstantTemplate" );
+            classTemplate = CodeGenUtil.loadResourceAsString( "/DelegateClassTemplate" );
+            methodTemplate = CodeGenUtil.loadResourceAsString( "/MethodTemplate" );
+            methodExTemplate = CodeGenUtil.loadResourceAsString( "/MethodTemplateBeneEx" );
+            constantTemplate = CodeGenUtil.loadResourceAsString( "/ConstantTemplate" );
         }
         catch( final IOException e )
         {
@@ -58,118 +62,128 @@ public class DelegateBuilder {
         }
     }
 
-    public static void parseFile( final Reader in, final Writer delegateClass, final Set<String> constants )
+    private static String generateClassName( final String serviceName )
+    {
+        return ( serviceName.endsWith( "Service" ) ? serviceName.replaceAll( "Service$", "" ) : serviceName )
+        + "Delegate";
+    }
+
+    public static void parseFile( final Reader in, final Writer out, final Set<String> constants )
     throws IOException,
     ParseException
     {
         final CompilationUnit cu = JavaParser.parse( in );
 
-        final DelegateBuilder builder = new DelegateBuilder( cu )
-        .addMethods( BuilderUtil.getMethods( cu ) )
-        .setServiceName( BuilderUtil.getClassName( cu ) );
+        final DelegateBuilder builder = new DelegateBuilder( cu );
 
-        delegateClass.write( builder.generateClassDef() );
-        delegateClass.flush();
+        out.write( builder.generateClassDef() );
+        out.flush();
         constants.addAll( builder.generateConstantDef() );
     }
 
-    private String className = "";
-    private final StringBuilder classStr = new StringBuilder(DelegateBuilder.classTemplate);
     private final CompilationUnit compUnit;
-    private final Set<String> constants = Sets.newHashSet();
-    private final SortedSet<MethodDeclaration> methods = new TreeSet<MethodDeclaration>(
-    new BuilderUtil.ParameterComparator() );
-    private String serviceName = "";
+    private final Map<String, String> constants = Maps.newHashMap();
 
     public DelegateBuilder( final CompilationUnit cu )
     {
         this.compUnit = cu;
     }
 
-    public DelegateBuilder addMethod(final MethodDeclaration m)
+    private String constantize( final String value, final String scope )
     {
-        this.methods.add(m);
-        return this;
+        return this.constantize( value, value, scope );
     }
 
-    public DelegateBuilder addMethods( final Collection<MethodDeclaration> m )
+    private String constantize( final String value, final String key, final String scope )
     {
-        this.methods.addAll( m );
-        return this;
+        final String existingValue = this.constants.get( key );
+        if ( existingValue == null )
+        {
+            this.constants.put( key, value );
+        }
+        else if ( !existingValue.equals( value ) )
+        {
+            throw new RuntimeException( "Attempted to create a new constant with an existing name. Name: " + key
+                + " existing value: " + existingValue + " NewValue:" + value );
+        }
+        //We don't care if they are inserting the same value as a pre existing value.
+
+        return "ServiceConstants." + this.createConstant( key, scope );
     }
 
-    private String constantize(final String value)
+    private String createConstant( final String str, final String scope )
     {
-        this.constants.add( value );
-        return "ServiceConstants." + this.createConstant( value );
-    }
-
-    private String createConstant(final String str)
-    {
-        return ( this.serviceName.equals( str ) ? "" : this.serviceName )
-        + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
+        return ( str.equals( scope ) ? "" : scope ) + Character.toUpperCase( str.charAt( 0 ) ) + str.substring( 1 );
     }
 
     private String generateClassDef()
     {
-        if ( StringUtils.isBlank( this.className ) )
-        {
-            DelegateBuilder.logger.error( "The class name is blank." );
-        }
-        if ( StringUtils.isBlank( this.serviceName ) )
-        {
-            DelegateBuilder.logger.error( "The service name is blank." );
-        }
-        return this.classStr.toString()
-        .replace( "<className>", this.className )
+        final String serviceName = CodeGenUtil.getClassName( this.compUnit );
+        final String className = DelegateBuilder.generateClassName( serviceName );
+        final String packageName = this.compUnit.getPackage().getName().getName().toString();
+
+        final Collection<MethodDeclaration> methods = new TreeSet<MethodDeclaration>( new CodeGenUtil.ParameterComparator() );
+        methods.addAll( CodeGenUtil.getMethods( this.compUnit ) );
+
+        final Collection<String> imports = ImportResolver.resolveImports( this.compUnit.getImports(), CodeGenUtil.getMethodTypes( methods ) );
+
+        return DelegateBuilder.classTemplate
+        .replace( "<className>", className )
         .replace( "<date>", new SimpleDateFormat( "MM/dd/yyyy" ).format( new Date() ) )
-        .replace( "<methods>", Joiner.on( "\n" ).join( this.generateMethods() ) )
-        .replace( "<serviceName>", this.serviceName )
-            .replace( "<packageName>", this.compUnit.getPackage().getName().getName().toString() )
-        .replace( "<imports>",
-            Joiner.on( "\n" ).join(
-                ImportResolver.resolveImports( this.compUnit.getImports(),
-                    BuilderUtil.getMethodTypes( this.methods ) ) ) );
+        .replace( "<methods>", Joiner.on( "\n" ).join( this.generateMethods( methods, serviceName ) ) )
+        .replace( "<serviceName>", serviceName )
+        .replace( "<packageName>", packageName )
+        .replace( "<imports>", Joiner.on( "\n" ).join( imports ) );
     }
 
     private List<String> generateConstantDef()
     {
-        return Arrays.asList( this.generateConstants( this.constants ) );
+        return Arrays.asList( this.generateConstants( this.constants, CodeGenUtil.getClassName( this.compUnit ) ) );
     }
 
-    private String[] generateConstants( final Collection<String> coll )
+    private String[] generateConstants( final Map<String, String> constants, final String serviceName )
     {
-        final Object[] values = coll.toArray();
+        final Object[] values = constants.entrySet().toArray();
         final String[] constantValues = new String[values.length];
         for( int x = 0; x < values.length; x++ )
         {
-            final String con = (String) values[x];
+            @SuppressWarnings( "unchecked" )
+            final Map.Entry<String, String> con = (Entry<String, String>) values[x];
 
             constantValues[x] = DelegateBuilder.constantTemplate
-            .replace( "<name>", this.createConstant( con ) )
-            .replace("<value>", con);
+            .replace( "<name>", this.createConstant( con.getKey(), serviceName ) )
+            .replace( "<value>", con.getValue() );
         }
 
         Arrays.sort( constantValues );
         return constantValues;
     }
 
-    private String generateMethod( final MethodDeclaration d )
+    private String generateMethod( final MethodDeclaration d, final String serviceName )
     {
-        return this.getMethodString( d )
-        .replace( "<returnType>", d.getType().toString() )
-        .replace( "<return>", d.getType().toString().equals( "void" ) ? "" : "return" )
-        .replace( "<methodName>", d.getName() )
-        .replace( "<methodNameConst>", this.constantize( d.getName() ) )
-        .replace( "<serviceNameConst>", this.constantize( this.serviceName ) )
-        .replace( "<javadoc>", this.generateMethodComment( d ) )
-        .replace( "<params>", d.getParameters() != null ? Joiner.on( ", " ).join( d.getParameters() ) : "" )
-        .replace( "<paramNames>", this.getParamNames( d.getParameters() ) );
+        try
+        {
+            return this.getMethodString( d )
+            .replace( "<returnType>", d.getType().toString() )
+            .replace( "<return>", ( d.getType() instanceof VoidType ) ? "" : "return" )
+            .replace( "<methodName>", d.getName() )
+            .replace( "<methodNameConst>", this.constantize( d.getName(), serviceName ) )
+            .replace( "<serviceNameConst>", this.constantize( serviceName, "" ) )
+            .replace( "<javadoc>", this.generateMethodComment( d ) )
+            .replace( "<params>", d.getParameters() != null ? Joiner.on( ", " ).join( d.getParameters() ) : "" )
+            .replace( "<paramNames>", this.getParamNames( d.getParameters() ) );
+        }
+        catch( final ParseException e )
+        {
+            DelegateBuilder.logger.error( "An exception occured when parsing method declaration in service "
+            + serviceName, e );
+            throw new RuntimeException( "Failed to parse service." );
+        }
     }
 
-    private String generateMethodComment(final MethodDeclaration d)
+    private String generateMethodComment( final MethodDeclaration d )
     {
-        if(d.getComment() == null || d.getComment().toString().isEmpty())
+        if ( d.getComment() == null || d.getComment().toString().isEmpty() )
         {
             return "/**\n"
             + "\t * No comment exists for this service method.\n"
@@ -179,17 +193,17 @@ public class DelegateBuilder {
         return d.getComment().toString().trim();
     }
 
-    private Collection<String> generateMethods()
+    private Collection<String> generateMethods( final Collection<MethodDeclaration> methods, final String serviceName )
     {
-        final Collection<String> genMethods = Lists.newArrayListWithCapacity( this.methods.size() );
-        for(final MethodDeclaration m : this.methods)
+        final Collection<String> genMethods = Lists.newArrayListWithCapacity( methods.size() );
+        for( final MethodDeclaration m : methods )
         {
-            genMethods.add( this.generateMethod( m ));
+            genMethods.add( this.generateMethod( m, serviceName ) );
         }
         return genMethods;
     }
 
-    private String getMethodString(final MethodDeclaration d)
+    private String getMethodString( final MethodDeclaration d ) throws ParseException
     {
         if ( d.getThrows() != null )
         {
@@ -199,10 +213,9 @@ public class DelegateBuilder {
                 {
                     return DelegateBuilder.methodExTemplate;
                 }
-                else if ( !"Exception".equals( exp.getName() ) )
+                else
                 {
-                    throw new Error( "Unsupported Exception found on service method. Service: "
-                    + this.serviceName + " Method: " + d.getName() + " Exception: " + exp.getName() );
+                    return DelegateBuilder.methodTemplate;
                 }
             }
         }
@@ -224,22 +237,6 @@ public class DelegateBuilder {
         }
 
         return ", " + Joiner.on( ", " ).join( names );
-    }
-
-    public final DelegateBuilder setServiceName(final String serviceName)
-    {
-        this.serviceName = serviceName;
-
-        if(!serviceName.endsWith("Service"))
-        {
-            DelegateBuilder.logger.warn("Attempting to generate delegate for file not marked as service.");
-        }
-        else
-        {
-            this.className = serviceName.replaceAll( "Service$", "" ) + "Delegate";
-        }
-
-        return this;
     }
 
     @Override

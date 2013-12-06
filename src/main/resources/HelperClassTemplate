@@ -16,6 +16,12 @@ package com.benecard.pbm.helper;
 import javax.ejb.EJBAccessException;
 import javax.ejb.EJBException;
 
+import org.apache.log4j.Logger;
+
+import com.benecard.commons.ServiceConstants;
+import com.benecard.commons.MessageHelper;
+import com.benecard.commons.exceptions.BenecardSecurityException;
+import com.benecard.commons.exceptions.BenecardSystemException;
 
 <imports>
 
@@ -25,7 +31,7 @@ import javax.ejb.EJBException;
  * This class was auto generated.  It should not be modified.
  * @date <date>
  */
-public final class <className> extends DelegateBase
+public final class <className> implements IAccessHelper
 {
 	public static final Logger logger = Logger.getLogger(<className>.class);
 	public final <localClass> localRef;
@@ -35,8 +41,8 @@ public final class <className> extends DelegateBase
      */
 	public <className>()
 	{
-		postalAddressServiceLocalReference = ServiceLocator.getInstance().getService(
-		<localEjbName>, <className>.class);
+		localRef = ServiceLocator.getInstance().getService(
+		<localEjbName>, <localClass>.class);
 	}
 	
 	/**
@@ -53,32 +59,31 @@ public final class <className> extends DelegateBase
      * 
      */
     public final Object execute( final String operation,
-                                 final Object[] paramObjects ) throws BenecardException, BenecardSecurityException
+                                 final Object[] paramObjects ) throws BenecardSystemException, BenecardSecurityException
     {
     	<className>.logger.info("<className> : Start execute method.");
     	Object responseObject = null;
     	try
     	{
     		<methodCalls>
-    		throw new RuntimeException("Operation " + operation + " is currently unsupported in the <className>");
+    		else
+    		{
+    			throw new RuntimeException("Operation " + operation + " is currently unsupported in the <className>");
+    		}
     	}
     	catch( final EJBAccessException ex )
         {
-            this.logger.error( ex );
             throw new BenecardSecurityException( MessageHelper.getErrorMessage( "error.system.security",
                 ex.getMessage() ), ex );
         }
         catch( final EJBException ex )
         {
-            this.logger.error( ex );
             throw new BenecardSystemException( MessageHelper.getErrorMessage( "error.system.security",
                 ex.getMessage() ), ex );
         }
-        catch( final RuntimeException ex )
+        catch( final Exception ex )
         {
-            this.logger.error( ex );
-
-            throw new BenecardSystemException( MessageHelper.getErrorMessage( "error.system.unknown",
+        	throw new BenecardSystemException( MessageHelper.getErrorMessage( "error.system.unknown",
                 ex.getMessage() ), ex );
         }
         
